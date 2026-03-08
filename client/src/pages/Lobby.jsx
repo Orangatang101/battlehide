@@ -15,9 +15,9 @@ const MODES = [
 
 const BUILDINGS = [
     { id: 'pcl', icon: '📚', name: 'PCL', desc: 'Perry-Castañeda Library — 6 floors, ~3 min zone intervals', floors: 6, color: '#3b82f6' },
-    { id: 'rowling', icon: '🏛️', name: 'Rowling Hall', desc: '3 floors — slowest zone closing (~6 min intervals)', floors: 3, color: '#22c55e' },
-    { id: 'pma', icon: '🔬', name: 'PMA', desc: 'Physics, Math & Astronomy — 5 floors, ~3.5 min intervals', floors: 5, color: '#a855f7' },
-    { id: 'eer', icon: '⚡', name: 'EER', desc: 'Engineering Education & Research — 7 floors, fastest closing (~2.5 min)', floors: 7, color: '#ef4444' },
+    { id: 'rowling', icon: '🏛️', name: 'Rowling Hall', desc: 'McCombs School — 5 floors, ~4 min zone intervals', floors: 5, color: '#22c55e' },
+    { id: 'pma', icon: '🔬', name: 'PMA', desc: 'Physics, Math & Astronomy — 19-floor tower! Fastest zones (~2 min)', floors: 19, color: '#a855f7' },
+    { id: 'eer', icon: '⚡', name: 'EER', desc: 'Engineering Education & Research — 9 floors, ~2.5 min intervals', floors: 9, color: '#ef4444' },
 ]
 
 export default function Lobby() {

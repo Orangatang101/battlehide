@@ -5,6 +5,13 @@ import { useGame } from '../GameContext'
 import RoleReveal from '../components/RoleReveal'
 import ToastEvents from '../components/ToastEvents'
 
+const BUILDING_FLOORS = {
+    pcl: [1, 2, 3, 4, 5, 6],
+    rowling: [1, 2, 3, 4, 5],
+    pma: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+    eer: [1, 2, 3, 4, 5, 6, 7, 8, 9],
+}
+
 export default function GameScreen() {
     const { socket } = useSocket()
     const { state, dispatch } = useGame()
@@ -16,6 +23,7 @@ export default function GameScreen() {
     const [jailbreakHeld, setJailbreakHeld] = useState(false)
     const [jailbreakProgress, setJailbreakProgress] = useState(0)
     const [activeTab, setActiveTab] = useState('hud')
+    const [myFloor, setMyFloor] = useState(1)
     const jailbreakRef = useRef(null)
     const jailbreakTimerRef = useRef(null)
 
@@ -25,6 +33,14 @@ export default function GameScreen() {
     const isCountdown = state.roomStatus === 'countdown'
     const isActive = state.roomStatus === 'active'
     const rules = state.rules?.features || {}
+    const mapId = state.mapId
+    const availableFloors = mapId ? (BUILDING_FLOORS[mapId] || []) : []
+
+    // Report floor changes to server
+    const changeFloor = (floor) => {
+        setMyFloor(floor)
+        socket?.emit('player:setFloor', { code: state.roomCode, floor })
+    }
 
     // Countdown timer
     useEffect(() => {
@@ -122,6 +138,36 @@ export default function GameScreen() {
                 )}
             </AnimatePresence>
 
+            {/* Audio Trap overlay (LOUD SOUND for hiders) */}
+            <AnimatePresence>
+                {state.audioTrapFired && (
+                    <motion.div
+                        initial={{ opacity: 0, scale: 1.1 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0 }}
+                        style={{
+                            position: 'fixed', inset: 0, background: 'rgba(239,68,68,0.95)', zIndex: 900,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16,
+                        }}
+                    >
+                        <motion.div
+                            animate={{ scale: [1, 1.3, 1], rotate: [0, 10, -10, 0] }}
+                            transition={{ duration: 0.5, repeat: Infinity }}
+                            style={{ fontSize: '6rem' }}
+                        >🔊</motion.div>
+                        <h2 style={{ color: '#fff', fontFamily: 'var(--font-mono)', fontSize: '2rem', textAlign: 'center' }}>
+                            AUDIO TRAP!
+                        </h2>
+                        <p style={{ color: 'rgba(255,255,255,0.8)', textAlign: 'center', fontSize: '1.1rem' }}>
+                            Your phone is making noise!<br />
+                            {state.audioTrapData?.zoneName && (
+                                <span style={{ fontSize: '0.9rem' }}>Zone closing soon: {state.audioTrapData.zoneName}</span>
+                            )}
+                        </p>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             {/* Paranoia overlay */}
             <AnimatePresence>
                 {state.paranoiaActive && (
@@ -134,7 +180,40 @@ export default function GameScreen() {
                 )}
             </AnimatePresence>
 
-            {/* Radar ping overlay */}
+            {/* Compass Arrow overlay (seekers only) */}
+            <AnimatePresence>
+                {state.compass && isSeeker && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -30 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -30 }}
+                        style={{
+                            position: 'fixed', top: 80, left: '50%', transform: 'translateX(-50%)',
+                            background: 'rgba(239,68,68,0.15)', backdropFilter: 'blur(12px)',
+                            border: '1px solid rgba(239,68,68,0.4)', borderRadius: 16,
+                            padding: '16px 28px', zIndex: 700, textAlign: 'center',
+                            minWidth: 220,
+                        }}
+                    >
+                        <div style={{ fontSize: '0.65rem', color: 'var(--red)', textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, marginBottom: 6 }}>
+                            🧭 Compass Arrow
+                        </div>
+                        <div style={{ fontSize: '2.5rem', marginBottom: 4 }}>
+                            {state.compass.direction.includes('above') ? '⬆️' : state.compass.direction.includes('below') ? '⬇️' : '➡️'}
+                        </div>
+                        <div style={{ color: '#fff', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '1rem' }}>
+                            {state.compass.hint}
+                        </div>
+                        {state.compass.floorDiff > 0 && (
+                            <div style={{ color: 'var(--text2)', fontSize: '0.82rem', marginTop: 4 }}>
+                                {state.compass.floorDiff} floor{state.compass.floorDiff > 1 ? 's' : ''} away
+                            </div>
+                        )}
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Location ping overlay (seekers - enhanced with floor data) */}
             <AnimatePresence>
                 {state.radarPing && (
                     <motion.div className="radar-container" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
@@ -144,9 +223,27 @@ export default function GameScreen() {
                             <div className="radar-blip" style={{ top: '30%', left: '60%' }} />
                         </div>
                         <div style={{ textAlign: 'center' }}>
-                            <p style={{ color: 'var(--green)', fontWeight: 700, marginBottom: 4 }}>Hiders detected in:</p>
+                            <p style={{ color: 'var(--green)', fontWeight: 700, marginBottom: 4 }}>
+                                {state.radarPing.hiderCount || '?'} hider(s) detected
+                            </p>
+                            {state.radarPing.floors?.length > 0 && (
+                                <div style={{ marginBottom: 8 }}>
+                                    <span style={{ fontSize: '0.75rem', color: 'var(--text3)', textTransform: 'uppercase' }}>Floor(s):</span>
+                                    <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginTop: 4 }}>
+                                        {state.radarPing.floors.map(f => (
+                                            <span key={f} style={{
+                                                background: 'rgba(34,197,94,0.2)', border: '1px solid rgba(34,197,94,0.4)',
+                                                padding: '4px 12px', borderRadius: 8, fontFamily: 'var(--font-mono)',
+                                                fontSize: '1.2rem', fontWeight: 700, color: 'var(--green)',
+                                            }}>
+                                                F{f}
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                             {state.radarPing.sectors?.map(s => (
-                                <div key={s} style={{ color: 'var(--text)', fontFamily: 'var(--font-mono)', fontSize: '1rem' }}>{s}</div>
+                                <div key={s} style={{ color: 'var(--text)', fontFamily: 'var(--font-mono)', fontSize: '0.9rem' }}>{s}</div>
                             ))}
                         </div>
                     </motion.div>
@@ -202,6 +299,13 @@ export default function GameScreen() {
                             </div>
                         </div>
                     </div>
+                    {/* Floor indicator */}
+                    {mapId && (
+                        <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: '0.6rem', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Floor</div>
+                            <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--blue)', fontSize: '1.2rem' }}>F{myFloor}</div>
+                        </div>
+                    )}
                     {/* Timer */}
                     <div style={{ textAlign: 'right' }}>
                         <div style={{ fontSize: '0.65rem', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Time Left</div>
@@ -213,6 +317,36 @@ export default function GameScreen() {
                     <div className={`progress-fill ${timeLeft < 120 ? 'danger' : ''}`} style={{ width: `${timeLeftPct}%` }} />
                 </div>
             </div>
+
+            {/* Floor selector bar */}
+            {mapId && availableFloors.length > 0 && (
+                <div style={{
+                    background: 'rgba(59,130,246,0.06)', borderBottom: '1px solid rgba(59,130,246,0.15)',
+                    padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 8, overflowX: 'auto',
+                }}>
+                    <span style={{ fontSize: '0.7rem', color: 'var(--blue)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>
+                        📍 I'm on:
+                    </span>
+                    <div style={{ display: 'flex', gap: 4, overflowX: 'auto' }}>
+                        {availableFloors.map(f => (
+                            <button
+                                key={f}
+                                onClick={() => changeFloor(f)}
+                                style={{
+                                    background: myFloor === f ? 'var(--blue)' : 'rgba(255,255,255,0.05)',
+                                    color: myFloor === f ? '#fff' : 'var(--text2)',
+                                    border: myFloor === f ? '1px solid var(--blue)' : '1px solid var(--border)',
+                                    borderRadius: 8, padding: '4px 10px', fontSize: '0.8rem',
+                                    fontFamily: 'var(--font-mono)', fontWeight: 700, cursor: 'pointer',
+                                    minWidth: 36, transition: 'all 0.15s',
+                                }}
+                            >
+                                {f}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {/* Jammer status */}
             {state.jammerActive && (
@@ -250,7 +384,7 @@ export default function GameScreen() {
                         {/* Zone status */}
                         {rules.shrinkingZone?.enabled && (
                             <div className="card" style={{ padding: '16px' }}>
-                                <div className="section-header">Zone Status</div>
+                                <div className="section-header">Zone Status (Floors)</div>
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                                     {state.gameState?.zones?.map(z => (
                                         <span key={z.id} className={`zone-pill ${state.closedZones?.includes(z.id) ? 'zone-closed' : 'zone-active'}`}>
@@ -267,10 +401,9 @@ export default function GameScreen() {
                             <div className="section-header">Objectives</div>
                             {isSeeker && (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                    <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                                        <span>🔴</span><p style={{ color: 'var(--text)', margin: 0, fontSize: '0.9rem' }}>Find and tag all hiders before time runs out</p>
-                                    </div>
-                                    {rules.locationPings?.enabled && <div style={{ display: 'flex', gap: 10 }}><span>📡</span><p style={{ margin: 0, fontSize: '0.9rem' }}>Watch for radar pings every {rules.locationPings.intervalMinutes} min</p></div>}
+                                    <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}><span>🔴</span><p style={{ color: 'var(--text)', margin: 0, fontSize: '0.9rem' }}>Find and tag all hiders before time runs out</p></div>
+                                    {rules.locationPings?.enabled && <div style={{ display: 'flex', gap: 10 }}><span>📡</span><p style={{ margin: 0, fontSize: '0.9rem' }}>Floor pings every {rules.locationPings.intervalMinutes} min show which floors hiders are on</p></div>}
+                                    <div style={{ display: 'flex', gap: 10 }}><span>🧭</span><p style={{ margin: 0, fontSize: '0.9rem' }}>Compass arrow hints appear every 45s pointing up/down to hiders</p></div>
                                     {rules.bountyContracts?.enabled && <div style={{ display: 'flex', gap: 10 }}><span>🎯</span><p style={{ margin: 0, fontSize: '0.9rem' }}>Hunt bounty targets for bonus points</p></div>}
                                     {state.isAlphaSeeker && rules.blackoutProtocol?.enabled && !state.gameState?.blackoutUsed && (
                                         <div style={{ display: 'flex', gap: 10 }}><span>🌑</span><p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--red)' }}>You can trigger BLACKOUT once in Actions tab</p></div>
@@ -280,11 +413,12 @@ export default function GameScreen() {
                             {(isHider || isAssassin) && (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                                     <div style={{ display: 'flex', gap: 10 }}><span>🟢</span><p style={{ color: 'var(--text)', margin: 0, fontSize: '0.9rem' }}>Survive until the timer runs out</p></div>
+                                    <div style={{ display: 'flex', gap: 10 }}><span>🔊</span><p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--red)' }}>WARNING: Your phone may play a LOUD sound near zone closings!</p></div>
+                                    {mapId && <div style={{ display: 'flex', gap: 10 }}><span>📍</span><p style={{ margin: 0, fontSize: '0.9rem' }}>Update your floor using the selector above — seekers get floor hints</p></div>}
                                     {rules.supplyCaches?.enabled && <div style={{ display: 'flex', gap: 10 }}><span>📦</span><p style={{ margin: 0, fontSize: '0.9rem' }}>Find supply caches for Jammer protection</p></div>}
                                     {rules.jailbreakTerminals?.enabled && <div style={{ display: 'flex', gap: 10 }}><span>🔓</span><p style={{ margin: 0, fontSize: '0.9rem' }}>Use terminals to free jailed teammates</p></div>}
-                                    {rules.decoyDeployments?.enabled && <div style={{ display: 'flex', gap: 10 }}><span>📢</span><p style={{ margin: 0, fontSize: '0.9rem' }}>Trigger decoys in Actions to distract seekers</p></div>}
-                                    {state.isVIP && <div style={{ display: 'flex', gap: 10 }}><span>⭐</span><p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--yellow)' }}>You are the VIP — do not run. Your team protects you.</p></div>}
-                                    {isAssassin && <div style={{ display: 'flex', gap: 10 }}><span>⚡</span><p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--purple)' }}>Assassin goal: tag the Alpha Seeker to reset the seeker team</p></div>}
+                                    {state.isVIP && <div style={{ display: 'flex', gap: 10 }}><span>⭐</span><p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--yellow)' }}>You are the VIP — your team protects you.</p></div>}
+                                    {isAssassin && <div style={{ display: 'flex', gap: 10 }}><span>⚡</span><p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--purple)' }}>Assassin goal: tag the Alpha Seeker</p></div>}
                                 </div>
                             )}
                         </div>
@@ -323,11 +457,8 @@ export default function GameScreen() {
                                 )}
                                 <button
                                     className="btn btn-green btn-full"
-                                    onMouseDown={startJailbreak}
-                                    onMouseUp={cancelJailbreak}
-                                    onTouchStart={startJailbreak}
-                                    onTouchEnd={cancelJailbreak}
-                                    onMouseLeave={cancelJailbreak}
+                                    onMouseDown={startJailbreak} onMouseUp={cancelJailbreak}
+                                    onTouchStart={startJailbreak} onTouchEnd={cancelJailbreak} onMouseLeave={cancelJailbreak}
                                 >
                                     {jailbreakHeld ? `Triggering... ${Math.round(jailbreakProgress)}%` : '🔓 Hold to Jailbreak'}
                                 </button>
@@ -357,30 +488,18 @@ export default function GameScreen() {
                             <div className="card" style={{ padding: 16, border: '1px solid rgba(239,68,68,0.3)' }}>
                                 <div style={{ marginBottom: 10 }}>
                                     <div style={{ fontWeight: 700, color: 'var(--red)', marginBottom: 4 }}>🌑 Blackout Protocol</div>
-                                    <p style={{ fontSize: '0.82rem' }}>Activate once per game. All hider terminals go dark and lights drop for {rules.blackoutProtocol.durationSeconds}s. One-time use.</p>
+                                    <p style={{ fontSize: '0.82rem' }}>Activate once per game. All hider terminals go dark for {rules.blackoutProtocol.durationSeconds}s.</p>
                                 </div>
-                                <button className="btn btn-primary btn-full" onClick={useBlackout}>
-                                    ⚡ ACTIVATE BLACKOUT
-                                </button>
+                                <button className="btn btn-primary btn-full" onClick={useBlackout}>⚡ ACTIVATE BLACKOUT</button>
                             </div>
                         )}
 
-                        {/* Decoy */}
-                        {(isHider || isAssassin) && rules.decoyDeployments?.enabled && (
-                            <div className="card" style={{ padding: 16 }}>
-                                <div style={{ marginBottom: 10 }}>
-                                    <div style={{ fontWeight: 700, marginBottom: 4 }}>📢 Decoy Deployment</div>
-                                    <p style={{ fontSize: '0.82rem' }}>Drop a speaker elsewhere and trigger it. Instruct seekers to this feature via the printed setup guide.</p>
-                                </div>
-                                <div className="msg msg-info">Use your physical Bluetooth speaker. Drop it and leave the area first.</div>
-                            </div>
-                        )}
-
-                        {/* No actions available */}
+                        {/* No actions for regular seeker */}
                         {isSeeker && !state.isAlphaSeeker && (
                             <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text3)' }}>
                                 <div style={{ fontSize: '3rem', marginBottom: 12 }}>🔴</div>
                                 <p>You are a Seeker. Find and tag hiders!</p>
+                                <p style={{ fontSize: '0.85rem', marginTop: 8 }}>Watch for 🧭 compass arrows and 📡 floor pings</p>
                             </div>
                         )}
                     </motion.div>

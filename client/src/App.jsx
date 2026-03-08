@@ -101,10 +101,14 @@ export default function App() {
         socket.on('bounty:new', data => dispatch({ type: 'BOUNTY_NEW', payload: data }))
         socket.on('bounty:expired', () => dispatch({ type: 'BOUNTY_CLEAR' }))
         socket.on('bounty:claimed', () => dispatch({ type: 'BOUNTY_CLEAR' }))
-        socket.on('audio:trap', () => {
+        socket.on('audio:trap', (data) => {
             playBeep()
-            dispatch({ type: 'AUDIO_TRAP' })
-            setTimeout(() => dispatch({ type: 'AUDIO_TRAP_CLEAR' }), 3000)
+            dispatch({ type: 'AUDIO_TRAP', payload: data })
+            setTimeout(() => dispatch({ type: 'AUDIO_TRAP_CLEAR' }), 5000)
+        })
+        socket.on('compass:update', (data) => {
+            dispatch({ type: 'COMPASS_UPDATE', payload: data })
+            setTimeout(() => dispatch({ type: 'COMPASS_CLEAR' }), 8000)
         })
         socket.on('jammer:activated', data => {
             dispatch({ type: 'JAMMER_ACTIVATED' })
@@ -136,6 +140,7 @@ export default function App() {
             socket.off('bounty:expired')
             socket.off('bounty:claimed')
             socket.off('audio:trap')
+            socket.off('compass:update')
             socket.off('jammer:activated')
             socket.off('kicked')
             socket.off('promoted:host')

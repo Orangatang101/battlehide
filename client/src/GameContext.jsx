@@ -94,8 +94,10 @@ function reducer(state, action) {
         case 'RADAR_CLEAR': return { ...state, radarPing: null };
         case 'BOUNTY_NEW': return { ...state, bounty: action.payload };
         case 'BOUNTY_CLEAR': return { ...state, bounty: null };
-        case 'AUDIO_TRAP': return { ...state, audioTrapFired: true };
-        case 'AUDIO_TRAP_CLEAR': return { ...state, audioTrapFired: false };
+        case 'AUDIO_TRAP': return { ...state, audioTrapFired: true, audioTrapData: action.payload };
+        case 'AUDIO_TRAP_CLEAR': return { ...state, audioTrapFired: false, audioTrapData: null };
+        case 'COMPASS_UPDATE': return { ...state, compass: action.payload };
+        case 'COMPASS_CLEAR': return { ...state, compass: null };
         case 'JAMMER_ACTIVATED': return { ...state, jammerActive: true };
         case 'JAMMER_CLEAR': return { ...state, jammerActive: false };
         case 'SET_HOST': return { ...state, isHost: action.payload };

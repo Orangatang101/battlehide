@@ -1,7 +1,7 @@
 // gameEngine.js — Core game state and mechanics engine
 const { GAME_MODES } = require('./gameModes');
 
-// UT Austin Campus Building Maps — zones based on actual floors
+// UT Austin Campus Building Maps — zones based on ACTUAL floors
 const CAMPUS_MAPS = {
     pcl: {
         id: 'pcl',
@@ -10,57 +10,60 @@ const CAMPUS_MAPS = {
         floors: 6,
         zones: [
             { id: 'pcl_1', name: 'PCL — 1st Floor (Lobby & Reserves)', floor: 1 },
-            { id: 'pcl_2', name: 'PCL — 2nd Floor (Reference)', floor: 2 },
+            { id: 'pcl_2', name: 'PCL — 2nd Floor (Main Entrance & Reference)', floor: 2 },
             { id: 'pcl_3', name: 'PCL — 3rd Floor (Stacks)', floor: 3 },
             { id: 'pcl_4', name: 'PCL — 4th Floor (Stacks)', floor: 4 },
             { id: 'pcl_5', name: 'PCL — 5th Floor (Study Rooms)', floor: 5 },
             { id: 'pcl_6', name: 'PCL — 6th Floor (Quiet Zone)', floor: 6 },
         ],
-        // More floors = faster closing (6 floors → ~3 min intervals)
         zoneIntervalMinutes: 3,
     },
     rowling: {
         id: 'rowling',
-        name: 'Rowling Hall',
+        name: 'Rowling Hall (McCombs)',
         shortName: 'Rowling',
-        floors: 3,
+        floors: 5,
         zones: [
             { id: 'row_1', name: 'Rowling — 1st Floor (Atrium & Commons)', floor: 1 },
             { id: 'row_2', name: 'Rowling — 2nd Floor (Classrooms)', floor: 2 },
-            { id: 'row_3', name: 'Rowling — 3rd Floor (Offices)', floor: 3 },
+            { id: 'row_3', name: 'Rowling — 3rd Floor (Breakout Rooms)', floor: 3 },
+            { id: 'row_4', name: 'Rowling — 4th Floor (Faculty Offices)', floor: 4 },
+            { id: 'row_5', name: 'Rowling — 5th Floor (Executive Suites)', floor: 5 },
         ],
-        // Fewer floors = slower closing (3 floors → ~6 min intervals)
-        zoneIntervalMinutes: 6,
+        zoneIntervalMinutes: 4,
     },
     pma: {
         id: 'pma',
         name: 'PMA (Physics, Math & Astronomy)',
         shortName: 'PMA',
-        floors: 5,
+        floors: 19,
         zones: [
-            { id: 'pma_1', name: 'PMA — 1st Floor (Lobby & Lecture Halls)', floor: 1 },
-            { id: 'pma_2', name: 'PMA — 2nd Floor (Math Dept)', floor: 2 },
-            { id: 'pma_3', name: 'PMA — 3rd Floor (Physics Labs)', floor: 3 },
-            { id: 'pma_4', name: 'PMA — 4th Floor (Astronomy Wing)', floor: 4 },
-            { id: 'pma_5', name: 'PMA — 5th Floor (Research)', floor: 5 },
+            { id: 'pma_low', name: 'PMA — Floors 1-3 (Lobby & Lecture Halls)', floor: 1 },
+            { id: 'pma_4_6', name: 'PMA — Floors 4-6 (Math Department)', floor: 4 },
+            { id: 'pma_7_9', name: 'PMA — Floors 7-9 (Physics Labs)', floor: 7 },
+            { id: 'pma_10_12', name: 'PMA — Floors 10-12 (Research Offices)', floor: 10 },
+            { id: 'pma_13_15', name: 'PMA — Floors 13-15 (Astronomy Wing)', floor: 13 },
+            { id: 'pma_16_17', name: 'PMA — Floors 16-17 (Graduate Labs)', floor: 16 },
+            { id: 'pma_18_19', name: 'PMA — Floors 18-19 (Observatory Level)', floor: 18 },
         ],
-        zoneIntervalMinutes: 3.5,
+        zoneIntervalMinutes: 2,
     },
     eer: {
         id: 'eer',
         name: 'EER (Engineering Education & Research)',
         shortName: 'EER',
-        floors: 7,
+        floors: 9,
         zones: [
-            { id: 'eer_0', name: 'EER — Ground Floor (Atrium)', floor: 0 },
-            { id: 'eer_1', name: 'EER — 1st Floor (Collaboration)', floor: 1 },
-            { id: 'eer_2', name: 'EER — 2nd Floor (Classrooms)', floor: 2 },
-            { id: 'eer_3', name: 'EER — 3rd Floor (Labs)', floor: 3 },
-            { id: 'eer_4', name: 'EER — 4th Floor (Research)', floor: 4 },
-            { id: 'eer_5', name: 'EER — 5th Floor (Offices)', floor: 5 },
-            { id: 'eer_6', name: 'EER — 6th Floor (Conference)', floor: 6 },
+            { id: 'eer_1', name: 'EER — 1st Floor (Glass Atrium & Lobby)', floor: 1 },
+            { id: 'eer_2', name: 'EER — 2nd Floor (Collaboration Spaces)', floor: 2 },
+            { id: 'eer_3', name: 'EER — 3rd Floor (Classrooms)', floor: 3 },
+            { id: 'eer_4', name: 'EER — 4th Floor (Teaching Labs)', floor: 4 },
+            { id: 'eer_5', name: 'EER — 5th Floor (Research Labs)', floor: 5 },
+            { id: 'eer_6', name: 'EER — 6th Floor (Faculty Offices)', floor: 6 },
+            { id: 'eer_7', name: 'EER — 7th Floor (Conference Rooms)', floor: 7 },
+            { id: 'eer_8', name: 'EER — 8th Floor (Senior Labs)', floor: 8 },
+            { id: 'eer_9', name: 'EER — 9th Floor (Executive)', floor: 9 },
         ],
-        // Most floors = fastest closing (7 floors → ~2.5 min intervals)
         zoneIntervalMinutes: 2.5,
     },
 };
@@ -443,7 +446,7 @@ class GameEngine {
             room.timers.push(zoneTimer);
         }
 
-        // ── Location Pings
+        // ── Location Pings (enhanced with floor info)
         if (feat.locationPings?.enabled) {
             const intervalMs = (feat.locationPings.intervalMinutes || 5) * 60 * 1000;
             const pingTimer = setInterval(() => {
@@ -453,24 +456,65 @@ class GameEngine {
                 );
                 if (hiders.length === 0) return;
 
-                // Pick a random sector from alive hiders
+                // Build floor-aware ping data
+                const floorData = hiders.map(p => ({
+                    floor: p.currentFloor || '?',
+                    zone: p.currentZone || 'Unknown',
+                }));
+                const uniqueFloors = [...new Set(floorData.map(f => f.floor))];
                 const sectors = [...new Set(hiders.map(p => p.lastPosition?.sector).filter(Boolean))];
-                const pingData = sectors.length > 0
-                    ? { sectors, duration: feat.locationPings.durationSeconds || 10 }
-                    : { sectors: ['Unknown Sector'], duration: feat.locationPings.durationSeconds || 10 };
 
-                // Send only to seekers
+                const pingData = {
+                    sectors: sectors.length > 0 ? sectors : ['Unknown Sector'],
+                    floors: uniqueFloors,
+                    floorDetails: floorData,
+                    hiderCount: hiders.length,
+                    duration: feat.locationPings.durationSeconds || 10,
+                };
+
+                // Send to seekers only
                 for (const [sid, p] of room.players) {
                     if (p.role === 'seeker') {
                         this.io.to(sid).emit('ping:location', pingData);
                     }
                 }
-                this._broadcastEvent(room, '📡 Location ping active for 10 seconds!', 'warning');
+                this._broadcastEvent(room, `📡 Location ping! Hiders detected on floor(s): ${uniqueFloors.join(', ')}`, 'warning');
             }, intervalMs);
             room.timers.push(pingTimer);
         }
 
-        // ── Audio Trap
+        // ── Compass Arrow (periodic direction hint for seekers)
+        if (feat.locationPings?.enabled) {
+            const compassInterval = setInterval(() => {
+                if (room.status !== 'active') return;
+                const hiders = [...room.players.values()].filter(p =>
+                    (p.role === 'hider' || p.role === 'assassin') && p.status === 'alive',
+                );
+                if (hiders.length === 0) return;
+
+                // Pick a random alive hider and send their floor as a directional hint
+                const target = hiders[Math.floor(Math.random() * hiders.length)];
+                const seekerFloors = [...room.players.values()].filter(p => p.role === 'seeker');
+
+                for (const seeker of seekerFloors) {
+                    const seekerFloor = seeker.currentFloor || 1;
+                    const targetFloor = target.currentFloor || 1;
+                    let direction = 'same floor';
+                    if (targetFloor > seekerFloor) direction = 'above you ↑';
+                    else if (targetFloor < seekerFloor) direction = 'below you ↓';
+
+                    this.io.to(seeker.id).emit('compass:update', {
+                        direction,
+                        targetFloor,
+                        floorDiff: Math.abs(targetFloor - seekerFloor),
+                        hint: `A hider is ${direction}`,
+                    });
+                }
+            }, 45000); // Every 45 seconds
+            room.timers.push(compassInterval);
+        }
+
+        // ── Audio Trap (tied to zone closings — fires randomly 30-90s before a zone closes)
         if (feat.audioTrap?.enabled) {
             const scheduleAudioTrap = () => {
                 if (room.status !== 'active') return;
@@ -480,13 +524,21 @@ class GameEngine {
 
                 const t = setTimeout(() => {
                     if (room.status !== 'active') return;
-                    // Pick a random alive hider to ping
+                    // Pick a random alive hider to play loud sound
                     const hiders = [...room.players.values()].filter(p =>
                         (p.role === 'hider' || p.role === 'assassin') && p.status === 'alive',
                     );
                     if (hiders.length > 0) {
                         const target = hiders[Math.floor(Math.random() * hiders.length)];
-                        this.io.to(target.id).emit('audio:trap', { play: true });
+                        // Send audio trap with zone warning context
+                        const nextZoneIdx = gs.closedZones.length;
+                        const nextZone = gs.zones[nextZoneIdx];
+                        this.io.to(target.id).emit('audio:trap', {
+                            play: true,
+                            nearZoneClose: true,
+                            zoneName: nextZone?.name || 'Unknown Zone',
+                        });
+                        this._broadcastEvent(room, `🔊 Audio trap triggered! A phone just buzzed somewhere...`, 'danger');
                     }
                     scheduleAudioTrap();
                 }, delay);
