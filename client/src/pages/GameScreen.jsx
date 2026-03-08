@@ -483,7 +483,7 @@ export default function GameScreen() {
                                     onClick={activateArrow}
                                     disabled={!myPos}
                                     style={{
-                                        width: '100%', padding: '18px 24px', borderRadius: 16, border: 'none', cursor: 'pointer',
+                                        width: '100%', padding: '18px 24px', borderRadius: 16, cursor: 'pointer',
                                         background: `linear-gradient(135deg, ${accentBg}0.15), ${accentBg}0.08))`,
                                         border: `1.5px solid ${accentBg}0.35)`,
                                         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14,
@@ -523,7 +523,7 @@ export default function GameScreen() {
                     <motion.button whileTap={{ scale: 0.96 }}
                         onClick={triggerMapFlash} disabled={mapCooldown > 0}
                         style={{
-                            flex: 1, padding: '14px', borderRadius: 14, border: 'none', cursor: mapCooldown > 0 ? 'default' : 'pointer',
+                            flex: 1, padding: '14px', borderRadius: 14, cursor: mapCooldown > 0 ? 'default' : 'pointer',
                             background: mapCooldown > 0 ? 'rgba(255,255,255,0.03)' : `linear-gradient(135deg, ${accentBg}0.12), ${accentBg}0.06))`,
                             border: `1px solid ${mapCooldown > 0 ? 'var(--border)' : accentBg + '0.3)'}`,
                             textAlign: 'center', opacity: mapCooldown > 0 ? 0.5 : 1, transition: 'all 0.2s',
