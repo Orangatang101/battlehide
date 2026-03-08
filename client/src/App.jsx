@@ -133,6 +133,7 @@ export default function App() {
             socket.off('game:countdown')
             socket.off('game:start')
             socket.off('game:ended')
+            socket.off('players:full')
             socket.off('game:event')
             socket.off('zone:closed')
             socket.off('blackout:start')

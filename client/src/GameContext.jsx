@@ -52,10 +52,10 @@ function reducer(state, action) {
         };
         case 'ROOM_STATE': return {
             ...state,
-            roomStatus: action.payload.status,
-            modeName: action.payload.modeName,
-            hostName: action.payload.hostName,
-            playerCount: action.payload.playerCount,
+            roomStatus: action.payload.status ?? state.roomStatus,
+            modeName: action.payload.modeName ?? state.modeName,
+            hostName: action.payload.hostName ?? state.hostName,
+            playerCount: action.payload.playerCount ?? state.playerCount,
             players: action.payload.players || state.players,
             mapId: action.payload.mapId ?? state.mapId,
             rules: action.payload.rules || state.rules,
@@ -70,7 +70,7 @@ function reducer(state, action) {
             rules: action.payload.modeRules || state.rules,
             countdown: action.payload.countdown || 60,
         };
-        case 'GAME_COUNTDOWN': return { ...state, countdown: action.payload.seconds };
+        case 'GAME_COUNTDOWN': return { ...state, roomStatus: 'countdown', countdown: action.payload.seconds };
         case 'GAME_START': return {
             ...state,
             roomStatus: 'active',

@@ -316,6 +316,7 @@ class GameEngine {
         // Countdown then start
         const countdown = room.rules.countdownTime || 60;
         this.io.to(room.code).emit('game:countdown', { seconds: countdown });
+        this._broadcastRoomState(code);
 
         const t = setTimeout(() => {
             room.status = 'active';
@@ -492,36 +493,8 @@ class GameEngine {
             room.timers.push(pingTimer);
         }
 
-        // ── Compass Arrow (periodic direction hint for seekers)
-        if (feat.locationPings?.enabled) {
-            const compassInterval = setInterval(() => {
-                if (room.status !== 'active') return;
-                const hiders = [...room.players.values()].filter(p =>
-                    (p.role === 'hider' || p.role === 'assassin') && p.status === 'alive',
-                );
-                if (hiders.length === 0) return;
-
-                // Pick a random alive hider and send their floor as a directional hint
-                const target = hiders[Math.floor(Math.random() * hiders.length)];
-                const seekerFloors = [...room.players.values()].filter(p => p.role === 'seeker');
-
-                for (const seeker of seekerFloors) {
-                    const seekerFloor = seeker.currentFloor || 1;
-                    const targetFloor = target.currentFloor || 1;
-                    let direction = 'same floor';
-                    if (targetFloor > seekerFloor) direction = 'above you ↑';
-                    else if (targetFloor < seekerFloor) direction = 'below you ↓';
-
-                    this.io.to(seeker.id).emit('compass:update', {
-                        direction,
-                        targetFloor,
-                        floorDiff: Math.abs(targetFloor - seekerFloor),
-                        hint: `A hider is ${direction}`,
-                    });
-                }
-            }, 45000); // Every 45 seconds
-            room.timers.push(compassInterval);
-        }
+        // NOTE: Compass arrow is now GPS-based on the client side.
+        // No server-side compass timer needed.
 
         // ── Audio Trap (tied to zone closings — fires randomly 30-90s before a zone closes)
         if (feat.audioTrap?.enabled) {
@@ -1005,6 +978,8 @@ class GameEngine {
             color: p.color,
             score: p.score,
             status: p.status,
+            catchCount: p.catchCount || 0,
+            survivalTime: p.survivalTime || 0,
             ...(includeRole ? { role: p.role, teamName: p.teamName, isVIP: p.isVIP, isAlphaSeeker: p.isAlphaSeeker } : {}),
         };
     }
