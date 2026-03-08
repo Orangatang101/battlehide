@@ -57,6 +57,8 @@ function reducer(state, action) {
             hostName: action.payload.hostName,
             playerCount: action.payload.playerCount,
             players: action.payload.players || state.players,
+            mapId: action.payload.mapId ?? state.mapId,
+            rules: action.payload.rules || state.rules,
         };
         case 'RULES_UPDATE': return { ...state, rules: action.payload };
         case 'ROLE_ASSIGNED': return {

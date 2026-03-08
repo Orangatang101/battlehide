@@ -1,6 +1,70 @@
 // gameEngine.js — Core game state and mechanics engine
 const { GAME_MODES } = require('./gameModes');
 
+// UT Austin Campus Building Maps — zones based on actual floors
+const CAMPUS_MAPS = {
+    pcl: {
+        id: 'pcl',
+        name: 'PCL (Perry-Castañeda Library)',
+        shortName: 'PCL',
+        floors: 6,
+        zones: [
+            { id: 'pcl_1', name: 'PCL — 1st Floor (Lobby & Reserves)', floor: 1 },
+            { id: 'pcl_2', name: 'PCL — 2nd Floor (Reference)', floor: 2 },
+            { id: 'pcl_3', name: 'PCL — 3rd Floor (Stacks)', floor: 3 },
+            { id: 'pcl_4', name: 'PCL — 4th Floor (Stacks)', floor: 4 },
+            { id: 'pcl_5', name: 'PCL — 5th Floor (Study Rooms)', floor: 5 },
+            { id: 'pcl_6', name: 'PCL — 6th Floor (Quiet Zone)', floor: 6 },
+        ],
+        // More floors = faster closing (6 floors → ~3 min intervals)
+        zoneIntervalMinutes: 3,
+    },
+    rowling: {
+        id: 'rowling',
+        name: 'Rowling Hall',
+        shortName: 'Rowling',
+        floors: 3,
+        zones: [
+            { id: 'row_1', name: 'Rowling — 1st Floor (Atrium & Commons)', floor: 1 },
+            { id: 'row_2', name: 'Rowling — 2nd Floor (Classrooms)', floor: 2 },
+            { id: 'row_3', name: 'Rowling — 3rd Floor (Offices)', floor: 3 },
+        ],
+        // Fewer floors = slower closing (3 floors → ~6 min intervals)
+        zoneIntervalMinutes: 6,
+    },
+    pma: {
+        id: 'pma',
+        name: 'PMA (Physics, Math & Astronomy)',
+        shortName: 'PMA',
+        floors: 5,
+        zones: [
+            { id: 'pma_1', name: 'PMA — 1st Floor (Lobby & Lecture Halls)', floor: 1 },
+            { id: 'pma_2', name: 'PMA — 2nd Floor (Math Dept)', floor: 2 },
+            { id: 'pma_3', name: 'PMA — 3rd Floor (Physics Labs)', floor: 3 },
+            { id: 'pma_4', name: 'PMA — 4th Floor (Astronomy Wing)', floor: 4 },
+            { id: 'pma_5', name: 'PMA — 5th Floor (Research)', floor: 5 },
+        ],
+        zoneIntervalMinutes: 3.5,
+    },
+    eer: {
+        id: 'eer',
+        name: 'EER (Engineering Education & Research)',
+        shortName: 'EER',
+        floors: 7,
+        zones: [
+            { id: 'eer_0', name: 'EER — Ground Floor (Atrium)', floor: 0 },
+            { id: 'eer_1', name: 'EER — 1st Floor (Collaboration)', floor: 1 },
+            { id: 'eer_2', name: 'EER — 2nd Floor (Classrooms)', floor: 2 },
+            { id: 'eer_3', name: 'EER — 3rd Floor (Labs)', floor: 3 },
+            { id: 'eer_4', name: 'EER — 4th Floor (Research)', floor: 4 },
+            { id: 'eer_5', name: 'EER — 5th Floor (Offices)', floor: 5 },
+            { id: 'eer_6', name: 'EER — 6th Floor (Conference)', floor: 6 },
+        ],
+        // Most floors = fastest closing (7 floors → ~2.5 min intervals)
+        zoneIntervalMinutes: 2.5,
+    },
+};
+
 class GameEngine {
     constructor(io) {
         this.io = io;
@@ -64,7 +128,7 @@ class GameEngine {
             return { error: 'Game already in progress.' };
         }
 
-        if (room.players.size >= 25) return { error: 'Room is full (max 25 players).' };
+        if (room.players.size >= 40) return { error: 'Room is full (max 40 players).' };
         if ([...room.players.values()].some(p => p.name.toLowerCase() === playerName.toLowerCase())) {
             return { error: 'Name already taken. Choose a different name.' };
         }
@@ -183,7 +247,7 @@ class GameEngine {
                 const wasHost = room.hostSocketId === socketId;
 
                 // ── Grace period: keep player data for 30s so they can rejoin
-                const GRACE_MS = 30000;
+                const GRACE_MS = 60000;
                 const dcKey = `${code}:${player.name.toLowerCase()}`;
 
                 // Store the player data and start a removal timer
@@ -732,7 +796,21 @@ class GameEngine {
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
     _buildZones(room) {
-        const count = room.rules.features?.shrinkingZone?.enabled ? 6 : 0;
+        if (!room.rules.features?.shrinkingZone?.enabled) return [];
+
+        // Use campus building map if selected
+        const mapId = room.mapId;
+        const building = mapId ? CAMPUS_MAPS[mapId] : null;
+
+        if (building) {
+            // Use real building floors as zones
+            // Override the zone interval based on building size
+            room.rules.features.shrinkingZone.intervalMinutes = building.zoneIntervalMinutes;
+            return building.zones.map(z => ({ ...z, active: true }));
+        }
+
+        // Fallback: generic zones
+        const count = 6;
         const names = ['North Wing', 'South Wing', 'East Wing', 'West Wing', 'Upper Floor', 'Central Hub'];
         return Array.from({ length: count }, (_, i) => ({
             id: `zone_${i}`,
@@ -763,8 +841,10 @@ class GameEngine {
             status: room.status,
             mode: room.mode,
             modeName: room.rules.name,
+            mapId: room.mapId || null,
             playerCount: room.players.size,
             players: [...room.players.values()].map(p => this._sanitizePlayer(p, false)),
+            rules: room.rules,
         });
     }
 

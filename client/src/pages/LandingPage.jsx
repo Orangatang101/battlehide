@@ -56,7 +56,7 @@ export default function LandingPage() {
                     style={{ marginBottom: 32 }}
                 >
                     <span className="badge badge-red" style={{ fontSize: '0.7rem', padding: '6px 14px', letterSpacing: '0.15em' }}>
-                        🎮 REAL-WORLD BATTLE ROYALE
+                        🏫 UT AUSTIN CAMPUS EDITION
                     </span>
                 </motion.div>
 
@@ -70,7 +70,7 @@ export default function LandingPage() {
                 >
                     <h1 style={{
                         fontFamily: 'var(--font-mono)',
-                        fontSize: 'clamp(3rem, 10vw, 6rem)',
+                        fontSize: 'clamp(2.5rem, 10vw, 5.5rem)',
                         fontWeight: 900,
                         lineHeight: 0.9,
                         letterSpacing: '-0.03em',
@@ -78,12 +78,12 @@ export default function LandingPage() {
                         WebkitBackgroundClip: 'text',
                         WebkitTextFillColor: 'transparent',
                     }}>
-                        BATTLE<br />
+                        MCCOMBS<br />
                         <span style={{
                             background: 'linear-gradient(135deg, var(--red) 0%, #ff6b6b 100%)',
                             WebkitBackgroundClip: 'text',
                             WebkitTextFillColor: 'transparent',
-                        }}>HIDE</span>
+                        }}>MAFIA</span>
                     </h1>
                 </motion.div>
 
@@ -94,8 +94,8 @@ export default function LandingPage() {
                     transition={{ delay: 0.3 }}
                     style={{ color: 'var(--text2)', fontSize: '1.1rem', textAlign: 'center', maxWidth: 480, marginBottom: 48, lineHeight: 1.6 }}
                 >
-                    The world is your arena. Up to 25 players. Real locations.
-                    Zero mercy. Five game modes with full battle royale mechanics.
+                    The campus is your arena. Up to 40 players. Real UT Austin buildings.
+                    Floor-based zones. Zero mercy.
                 </motion.p>
 
                 {/* Action Buttons */}
@@ -113,7 +113,7 @@ export default function LandingPage() {
                     </button>
                 </motion.div>
 
-                {/* Mode badges */}
+                {/* Building badges */}
                 <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
@@ -121,11 +121,10 @@ export default function LandingPage() {
                     style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginTop: 48 }}
                 >
                     {[
-                        { icon: '👁️', label: 'Hide & Seek' },
-                        { icon: '🚔', label: 'Cops & Robbers' },
-                        { icon: '🦠', label: 'Infection' },
-                        { icon: '💀', label: 'Battle Royale' },
-                        { icon: '⚙️', label: 'Custom' },
+                        { icon: '📚', label: 'PCL' },
+                        { icon: '🏛️', label: 'Rowling Hall' },
+                        { icon: '🔬', label: 'PMA' },
+                        { icon: '⚡', label: 'EER' },
                     ].map(m => (
                         <span key={m.label} className="badge badge-gray">
                             {m.icon} {m.label}
@@ -154,7 +153,7 @@ export default function LandingPage() {
                     transition={{ delay: 1 }}
                     style={{ marginTop: 48, color: 'var(--text3)', fontSize: '0.8rem', textAlign: 'center' }}
                 >
-                    No download required. Works on any phone browser. Up to 25 players.
+                    No download required. Works on any phone browser. Up to 40 players.
                 </motion.p>
             </div>
         </div>

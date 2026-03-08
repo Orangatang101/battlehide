@@ -13,6 +13,13 @@ const MODES = [
     { id: 'custom', icon: '⚙️', name: 'Custom' },
 ]
 
+const BUILDINGS = [
+    { id: 'pcl', icon: '📚', name: 'PCL', desc: 'Perry-Castañeda Library — 6 floors, ~3 min zone intervals', floors: 6, color: '#3b82f6' },
+    { id: 'rowling', icon: '🏛️', name: 'Rowling Hall', desc: '3 floors — slowest zone closing (~6 min intervals)', floors: 3, color: '#22c55e' },
+    { id: 'pma', icon: '🔬', name: 'PMA', desc: 'Physics, Math & Astronomy — 5 floors, ~3.5 min intervals', floors: 5, color: '#a855f7' },
+    { id: 'eer', icon: '⚡', name: 'EER', desc: 'Engineering Education & Research — 7 floors, fastest closing (~2.5 min)', floors: 7, color: '#ef4444' },
+]
+
 export default function Lobby() {
     const { socket } = useSocket()
     const { state, dispatch } = useGame()
@@ -26,6 +33,12 @@ export default function Lobby() {
 
     const changeMode = (modeId) => {
         socket?.emit('room:setMode', { code: state.roomCode, modeId })
+    }
+
+    const selectMap = (mapId) => {
+        socket?.emit('room:setMap', { code: state.roomCode, mapId }, (res) => {
+            if (res?.error) setStartError(res.error)
+        })
     }
 
     const updateRules = (patch) => {
@@ -46,6 +59,7 @@ export default function Lobby() {
     }
 
     const currentModeObj = MODES.find(m => state.rules?.id === m.id) || MODES[0]
+    const currentMap = BUILDINGS.find(b => b.id === state.mapId)
 
     return (
         <div className="page" style={{ background: 'var(--bg)', paddingBottom: 120 }}>
@@ -56,9 +70,10 @@ export default function Lobby() {
                 position: 'sticky', top: 0, zIndex: 100,
             }}>
                 <div>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--text3)', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Lobby</div>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text3)', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>MCCOMBS MAFIA</div>
                     <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.9rem', color: 'var(--text2)' }}>
                         {currentModeObj.icon} {state.modeName || currentModeObj.name}
+                        {currentMap && <span style={{ marginLeft: 8, fontSize: '0.75rem', color: currentMap.color }}>• {currentMap.icon} {currentMap.name}</span>}
                     </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -124,6 +139,7 @@ export default function Lobby() {
                     <button className={`tab ${activeTab === 'players' ? 'active' : ''}`} onClick={() => setActiveTab('players')}>
                         Players ({state.playerCount || state.players?.length || 1})
                     </button>
+                    {isHost && <button className={`tab ${activeTab === 'map' ? 'active' : ''}`} onClick={() => setActiveTab('map')}>🏫 Map</button>}
                     {isHost && <button className={`tab ${activeTab === 'mode' ? 'active' : ''}`} onClick={() => setActiveTab('mode')}>Mode</button>}
                     {isHost && <button className={`tab ${activeTab === 'rules' ? 'active' : ''}`} onClick={() => setActiveTab('rules')}>Rules</button>}
                 </div>
@@ -131,7 +147,7 @@ export default function Lobby() {
                 {/* Players Tab */}
                 {activeTab === 'players' && (
                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                        <div className="section-header">Players {state.players?.length || 1} / 25</div>
+                        <div className="section-header">Players {state.players?.length || 1} / 40</div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                             {(state.players?.length > 0 ? state.players : [{ id: state.myId, name: state.myName || 'You', avatar: '👑', color: '#f59e0b', score: 0, status: 'alive' }]).map(p => (
                                 <div key={p.id} className="card" style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, borderRadius: 'var(--r-md)' }}>
@@ -150,12 +166,65 @@ export default function Lobby() {
                                 </div>
                             ))}
                         </div>
+
+                        {/* Building info banner */}
+                        {currentMap && (
+                            <div style={{ marginTop: 20, padding: '14px 18px', background: `${currentMap.color}08`, border: `1px solid ${currentMap.color}22`, borderRadius: 'var(--r-md)' }}>
+                                <div style={{ fontSize: '0.7rem', color: currentMap.color, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>
+                                    {currentMap.icon} Playing at {currentMap.name}
+                                </div>
+                                <div style={{ fontSize: '0.82rem', color: 'var(--text2)' }}>{currentMap.desc}</div>
+                            </div>
+                        )}
+
                         {!isHost && (
                             <div style={{ textAlign: 'center', marginTop: 40, color: 'var(--text2)' }}>
                                 <div style={{ fontSize: '2rem', marginBottom: 12 }}>⏳</div>
                                 <p>Waiting for the host to start the game...</p>
                             </div>
                         )}
+                    </motion.div>
+                )}
+
+                {/* Map Tab (host only) */}
+                {activeTab === 'map' && isHost && (
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                        <div className="section-header">Campus Building</div>
+                        <p style={{ fontSize: '0.82rem', color: 'var(--text2)', marginBottom: 16 }}>
+                            Choose a UT Austin building. Zones are based on real floors — more floors = faster closing.
+                        </p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            {BUILDINGS.map(b => {
+                                const isSelected = state.mapId === b.id
+                                return (
+                                    <div
+                                        key={b.id}
+                                        className="card card-hover"
+                                        onClick={() => selectMap(b.id)}
+                                        style={{
+                                            padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 16,
+                                            border: isSelected ? `1.5px solid ${b.color}` : '1px solid var(--border)',
+                                            boxShadow: isSelected ? `0 0 20px ${b.color}22` : 'var(--shadow-card)',
+                                            transition: 'all 0.2s',
+                                        }}
+                                    >
+                                        <span style={{ fontSize: '2rem' }}>{b.icon}</span>
+                                        <div style={{ flex: 1 }}>
+                                            <div style={{ fontWeight: 700, color: isSelected ? b.color : 'var(--text)', marginBottom: 3 }}>{b.name}</div>
+                                            <div style={{ fontSize: '0.78rem', color: 'var(--text2)' }}>{b.desc}</div>
+                                        </div>
+                                        <div style={{ textAlign: 'right', minWidth: 50 }}>
+                                            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.4rem', fontWeight: 700, color: isSelected ? b.color : 'var(--text3)' }}>{b.floors}</div>
+                                            <div style={{ fontSize: '0.65rem', color: 'var(--text3)', textTransform: 'uppercase' }}>floors</div>
+                                        </div>
+                                        {isSelected && <span style={{ color: b.color, fontWeight: 700, fontSize: '1.2rem' }}>✓</span>}
+                                    </div>
+                                )
+                            })}
+                        </div>
+                        <button className="btn btn-ghost btn-full btn-sm" style={{ marginTop: 12 }} onClick={() => selectMap(null)}>
+                            Clear Selection (Use Generic Zones)
+                        </button>
                     </motion.div>
                 )}
 

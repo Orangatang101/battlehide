@@ -154,6 +154,19 @@ io.on('connection', (socket) => {
         console.log(`[↺] ${playerName} rejoined room ${code} (host: ${response.isHost})`);
     });
 
+    // ── Set Map (building)
+    socket.on('room:setMap', ({ code, mapId }, cb) => {
+        const room = engine.getRoom(code);
+        if (!isHostSocket(room)) return cb?.({ error: 'Not the host.' });
+        if (mapId && !['pcl', 'rowling', 'pma', 'eer'].includes(mapId)) {
+            return cb?.({ error: 'Invalid map.' });
+        }
+        room.mapId = mapId || null;
+        cb?.({ ok: true, mapId: room.mapId });
+        engine._broadcastRoomState(room.code);
+        console.log(`[MAP] Room ${code} map set to: ${mapId || 'none'}`);
+    });
+
     // ── Set Game Mode
     socket.on('room:setMode', ({ code, modeId }) => {
         const room = engine.getRoom(code);
