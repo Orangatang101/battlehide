@@ -10,13 +10,14 @@ export function SocketProvider({ children }) {
 
     useEffect(() => {
         const s = io(window.location.origin, {
-            transports: ['websocket'],
             reconnectionAttempts: 10,
             reconnectionDelay: 1000,
+            timeout: 10000,
         });
         ref.current = s;
-        s.on('connect', () => setConnected(true));
-        s.on('disconnect', () => setConnected(false));
+        s.on('connect', () => { console.log('[BattleHide] Connected:', s.id); setConnected(true); });
+        s.on('disconnect', (reason) => { console.log('[BattleHide] Disconnected:', reason); setConnected(false); });
+        s.on('connect_error', (err) => { console.error('[BattleHide] Connection error:', err.message); });
         setSocket(s);
         return () => s.disconnect();
     }, []);
