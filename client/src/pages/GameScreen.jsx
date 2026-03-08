@@ -20,6 +20,12 @@ function calcBearing(lat1, lng1, lat2, lng2) {
         Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos(dLng)
     return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360
 }
+function formatDist(feet) {
+    if (feet < 50) return { text: 'NEARBY', sub: '< 50ft — GPS margin', nearby: true }
+    if (feet < 100) return { text: `~${Math.round(feet / 10) * 10}`, sub: 'ft (approx)', nearby: false }
+    if (feet < 1000) return { text: `${Math.round(feet / 10) * 10}`, sub: 'ft', nearby: false }
+    return { text: `${(feet / 5280).toFixed(1)}`, sub: 'mi', nearby: false }
+}
 
 // ── Circular Progress Ring ───────────────────────────────────────────────
 function CooldownRing({ progress, size = 160, stroke = 4, color = '#ef4444', children }) {
@@ -412,7 +418,7 @@ export default function GameScreen() {
                                         <motion.div animate={{ scale: [1, 1.15, 1] }} transition={{ duration: 1.5, repeat: Infinity, delay: Math.random() }}
                                             style={{ fontSize: '1.3rem', filter: `drop-shadow(0 0 6px ${isTgt ? accentColor : 'rgba(59,130,246,0.5)'})` }}>{p.avatar}</motion.div>
                                         <div style={{ fontSize: '0.55rem', color: isTgt ? accentColor : '#60a5fa', fontWeight: 700, whiteSpace: 'nowrap', textShadow: '0 1px 4px rgba(0,0,0,0.8)' }}>
-                                            {p.name} · {Math.round(dist)}ft
+                                            {p.name} · {dist < 50 ? 'nearby' : `${Math.round(dist / 10) * 10}ft`}
                                         </div>
                                     </motion.div>
                                 )
@@ -494,14 +500,27 @@ export default function GameScreen() {
                                     style={{ fontSize: '3.5rem', filter: `drop-shadow(0 0 12px ${accentBg}0.4))` }}
                                 >➤</motion.div>
                             </CooldownRing>
-                            <div style={{ textAlign: 'center', marginTop: 4 }}>
-                                <div style={{ fontFamily: 'var(--font-mono)', fontSize: '2rem', fontWeight: 800, color: accentColor, lineHeight: 1 }}>
-                                    {arrowTarget.distance}<span style={{ fontSize: '0.9rem', fontWeight: 600, marginLeft: 4 }}>ft</span>
-                                </div>
-                                <div style={{ fontSize: '0.85rem', color: 'var(--text2)', marginTop: 4 }}>
-                                    {arrowTarget.avatar} {arrowTarget.name}
-                                </div>
-                            </div>
+                            {(() => {
+                                const d = formatDist(arrowTarget.distance); return (
+                                    <div style={{ textAlign: 'center', marginTop: 4 }}>
+                                        {d.nearby ? (
+                                            <motion.div animate={{ scale: [1, 1.08, 1] }} transition={{ duration: 1.5, repeat: Infinity }}
+                                                style={{ fontFamily: 'var(--font-mono)', fontSize: '1.5rem', fontWeight: 800, color: '#22c55e', lineHeight: 1, padding: '6px 16px', borderRadius: 10, background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)' }}>
+                                                📍 NEARBY
+                                            </motion.div>
+                                        ) : (
+                                            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '2rem', fontWeight: 800, color: accentColor, lineHeight: 1 }}>
+                                                {d.text}<span style={{ fontSize: '0.9rem', fontWeight: 600, marginLeft: 4 }}>{d.sub}</span>
+                                            </div>
+                                        )}
+                                        <div style={{ fontSize: '0.85rem', color: 'var(--text2)', marginTop: 6 }}>
+                                            {arrowTarget.avatar} {arrowTarget.name}
+                                        </div>
+                                        {d.nearby && <div style={{ fontSize: '0.65rem', color: 'var(--text3)', marginTop: 2 }}>GPS accuracy ~30ft</div>}
+                                    </div>
+                                )
+                            })()}
+                            {/* end distance display */}
                         </motion.div>
                     ) : (
                         /* INACTIVE: show activate button or cooldown */
