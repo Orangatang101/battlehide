@@ -44,6 +44,22 @@ app.get('*', (req, res) => {
 io.on('connection', (socket) => {
     console.log(`[+] Connected: ${socket.id}`);
 
+    // Helper: check if socket is the host by looking up their player name
+    const isHostSocket = (room) => {
+        if (!room) return false;
+        // First try direct ID match (fast path)
+        if (room.hostSocketId === socket.id) return true;
+        // Fallback: find this socket's player and check name against hostName
+        const player = room.players.get(socket.id);
+        if (player && room.hostName && player.name.toLowerCase() === room.hostName.toLowerCase()) {
+            // Fix stale hostSocketId
+            room.hostSocketId = socket.id;
+            console.log(`[HOST-FIX] Updated hostSocketId to ${socket.id} for ${player.name}`);
+            return true;
+        }
+        return false;
+    };
+
     // ── Create Room
     socket.on('room:create', ({ hostName }, cb) => {
         const room = engine.createRoom(socket.id, hostName);
@@ -141,21 +157,24 @@ io.on('connection', (socket) => {
     // ── Set Game Mode
     socket.on('room:setMode', ({ code, modeId }) => {
         const room = engine.getRoom(code);
-        if (room?.hostSocketId !== socket.id) return;
+        if (!isHostSocket(room)) return;
         engine.setMode(code, modeId);
     });
 
     // ── Update Rules
     socket.on('room:updateRules', ({ code, patch }) => {
         const room = engine.getRoom(code);
-        if (room?.hostSocketId !== socket.id) return;
+        if (!isHostSocket(room)) return;
         engine.updateRules(code, patch);
     });
 
     // ── Start Game
     socket.on('game:start', ({ code }, cb) => {
         const room = engine.getRoom(code);
-        if (room?.hostSocketId !== socket.id) return cb?.({ error: 'Not the host.' });
+        if (!isHostSocket(room)) {
+            console.log(`[!] game:start rejected. socket=${socket.id} hostSocketId=${room?.hostSocketId} hostName=${room?.hostName}`);
+            return cb?.({ error: 'Not the host.' });
+        }
         const result = engine.startGame(code);
         if (result.error) return cb?.({ error: result.error });
         cb?.({ ok: true });
@@ -198,14 +217,14 @@ io.on('connection', (socket) => {
     // ── End Game (host only)
     socket.on('game:end', ({ code }) => {
         const room = engine.getRoom(code);
-        if (room?.hostSocketId !== socket.id) return;
+        if (!isHostSocket(room)) return;
         engine.endGame(code, 'host_ended');
     });
 
     // ── Kick Player (host only)
     socket.on('player:kick', ({ code, playerId }) => {
         const room = engine.getRoom(code);
-        if (room?.hostSocketId !== socket.id) return;
+        if (!isHostSocket(room)) return;
         const target = room.players.get(playerId);
         if (!target) return;
         room.players.delete(playerId);
