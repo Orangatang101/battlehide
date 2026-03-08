@@ -96,6 +96,7 @@ function reducer(state, action) {
         case 'AUDIO_TRAP_CLEAR': return { ...state, audioTrapFired: false };
         case 'JAMMER_ACTIVATED': return { ...state, jammerActive: true };
         case 'JAMMER_CLEAR': return { ...state, jammerActive: false };
+        case 'SET_HOST': return { ...state, isHost: action.payload };
         case 'SET_ROOM': return {
             ...state,
             roomCode: action.payload.code,

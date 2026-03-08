@@ -114,6 +114,7 @@ io.on('connection', (socket) => {
             code: result.room.code,
             player: result.player,
             restored: result.restored || false,
+            isHost: result.room.hostSocketId === socket.id,
             room: {
                 code: result.room.code,
                 status: result.room.status,
@@ -129,13 +130,12 @@ io.on('connection', (socket) => {
             response.teamName = p.teamName;
             response.isVIP = p.isVIP;
             response.isAlphaSeeker = p.isAlphaSeeker || false;
-            response.isHost = result.room.hostSocketId === socket.id;
             response.gameState = result.room.gameState ? engine._serializeGameState(result.room) : null;
         }
 
         cb(response);
         engine._broadcastRoomState(result.room.code);
-        console.log(`[↺] ${playerName} rejoined room ${code}`);
+        console.log(`[↺] ${playerName} rejoined room ${code} (host: ${response.isHost})`);
     });
 
     // ── Set Game Mode

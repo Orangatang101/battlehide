@@ -11,42 +11,54 @@ import ResultsScreen from './pages/ResultsScreen'
 
 // --- Session helpers ---
 const SESSION_KEY = 'battlehide_session'
-const saveSession = (data) => {
+export const saveSession = (data) => {
     try { localStorage.setItem(SESSION_KEY, JSON.stringify(data)) } catch { }
 }
-const loadSession = () => {
+export const loadSession = () => {
     try { return JSON.parse(localStorage.getItem(SESSION_KEY)) } catch { return null }
 }
-const clearSession = () => {
+export const clearSession = () => {
     try { localStorage.removeItem(SESSION_KEY) } catch { }
 }
 
 export default function App() {
     const { socket } = useSocket()
     const { state, dispatch } = useGame()
-    const rejoinAttempted = useRef(false)
+    const stateRef = useRef(state)
+    stateRef.current = state
 
     useEffect(() => {
         if (!socket) return
 
+        // On EVERY connect (initial + reconnects), re-register with the server
         socket.on('connect', () => {
+            console.log('[BattleHide] Socket connected:', socket.id)
             dispatch({ type: 'SET_MY_ID', payload: socket.id })
 
-            // --- Auto-rejoin from saved session ---
-            if (rejoinAttempted.current) return
-            rejoinAttempted.current = true
+            // If we already have an active room in state, re-register immediately
+            // This handles Socket.io transport upgrades and reconnections
+            const currentState = stateRef.current
             const saved = loadSession()
+
             if (saved?.roomCode && saved?.playerName) {
-                console.log('[BattleHide] Attempting auto-rejoin:', saved.roomCode, saved.playerName)
+                console.log('[BattleHide] Re-registering with server:', saved.roomCode, saved.playerName)
                 socket.emit('room:rejoin', { code: saved.roomCode, playerName: saved.playerName }, (res) => {
                     if (res.error) {
                         console.warn('[BattleHide] Rejoin failed:', res.error)
-                        clearSession()
+                        // Only clear session if room truly doesn't exist anymore
+                        if (!currentState.roomCode) clearSession()
                         return
                     }
-                    console.log('[BattleHide] Rejoin succeeded!')
+                    console.log('[BattleHide] Rejoin succeeded! restored:', res.restored)
                     dispatch({ type: 'SET_ROOM', payload: { code: res.code, ...res.room } })
                     dispatch({ type: 'SET_MY_ID', payload: socket.id })
+
+                    // Restore host status
+                    if (res.isHost) {
+                        dispatch({ type: 'SET_HOST', payload: true })
+                    }
+
+                    // Restore role if mid-game
                     if (res.restored && res.role) {
                         dispatch({
                             type: 'ROLE_ASSIGNED', payload: {
@@ -70,9 +82,14 @@ export default function App() {
         socket.on('role:assigned', data => dispatch({ type: 'ROLE_ASSIGNED', payload: data }))
         socket.on('game:countdown', data => dispatch({ type: 'GAME_COUNTDOWN', payload: data }))
         socket.on('game:start', data => dispatch({ type: 'GAME_START', payload: data }))
-        socket.on('game:ended', data => dispatch({ type: 'GAME_ENDED', payload: data }))
-        socket.on('game:event', evt => dispatch({ type: 'EVENT', payload: evt }))
 
+        // Single game:ended handler — clears session AND dispatches
+        socket.on('game:ended', data => {
+            clearSession()
+            dispatch({ type: 'GAME_ENDED', payload: data })
+        })
+
+        socket.on('game:event', evt => dispatch({ type: 'EVENT', payload: evt }))
         socket.on('zone:closed', data => dispatch({ type: 'ZONE_CLOSED', payload: data }))
         socket.on('blackout:start', () => dispatch({ type: 'BLACKOUT_START' }))
         socket.on('blackout:end', () => dispatch({ type: 'BLACKOUT_END' }))
@@ -85,7 +102,6 @@ export default function App() {
         socket.on('bounty:expired', () => dispatch({ type: 'BOUNTY_CLEAR' }))
         socket.on('bounty:claimed', () => dispatch({ type: 'BOUNTY_CLEAR' }))
         socket.on('audio:trap', () => {
-            // Play a loud beep via Web Audio API
             playBeep()
             dispatch({ type: 'AUDIO_TRAP' })
             setTimeout(() => dispatch({ type: 'AUDIO_TRAP_CLEAR' }), 3000)
@@ -99,11 +115,8 @@ export default function App() {
             dispatch({ type: 'RESET' })
             window.location.href = '/'
         })
-
-        socket.on('game:ended', data => {
-            // Keep clearSession so they don't auto-rejoin a dead room
-            clearSession()
-            dispatch({ type: 'GAME_ENDED', payload: data })
+        socket.on('promoted:host', () => {
+            dispatch({ type: 'SET_HOST', payload: true })
         })
 
         return () => {
@@ -125,6 +138,7 @@ export default function App() {
             socket.off('audio:trap')
             socket.off('jammer:activated')
             socket.off('kicked')
+            socket.off('promoted:host')
         }
     }, [socket])
 
