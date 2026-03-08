@@ -99,9 +99,11 @@ class GameEngine {
         playerData.id = newSocketId;
         room.players.set(newSocketId, playerData);
 
-        // If they were the host, update host socket
-        if (room.hostName === playerData.name) {
+        // If they were the host, update host socket (case-insensitive comparison)
+        if (room.hostName && playerData.name &&
+            room.hostName.toLowerCase() === playerData.name.toLowerCase()) {
             room.hostSocketId = newSocketId;
+            console.log(`[HOST] Updated hostSocketId to ${newSocketId} for ${playerData.name}`);
         }
 
         console.log(`[+] Restored player ${playerData.name} in room ${room.code} (new socket: ${newSocketId})`);
@@ -119,7 +121,12 @@ class GameEngine {
         if (pending) {
             clearTimeout(pending.timeout);
             this.disconnectTimers.delete(dcKey);
-            return this._restorePlayer(room, socketId, pending.playerData);
+            const result = this._restorePlayer(room, socketId, pending.playerData);
+            // Always double-check host update
+            if (room.hostName?.toLowerCase() === playerName.toLowerCase()) {
+                room.hostSocketId = socketId;
+            }
+            return result;
         }
 
         // Check if player is still in the room map (e.g. timer hasn't fired yet)
@@ -127,7 +134,38 @@ class GameEngine {
             ([, p]) => p.name.toLowerCase() === playerName.toLowerCase()
         );
         if (existing) {
-            return this._restorePlayer(room, socketId, existing[1], existing[0]);
+            const result = this._restorePlayer(room, socketId, existing[1], existing[0]);
+            // Always double-check host update
+            if (room.hostName?.toLowerCase() === playerName.toLowerCase()) {
+                room.hostSocketId = socketId;
+            }
+            return result;
+        }
+
+        // Player not found in room at all — might be a fresh socket ID with no matching player
+        // This happens during transport upgrades where disconnect hasn't fired yet
+        // Check if they were the host based on name
+        if (room.hostName?.toLowerCase() === playerName.toLowerCase()) {
+            // Re-add the host with a fresh player object
+            const player = {
+                id: socketId,
+                name: playerName,
+                avatar: '👑',
+                color: '#f59e0b',
+                role: null,
+                status: 'alive',
+                score: 0,
+                isVIP: false,
+                isHost: true,
+                jammerActive: false,
+                jammerExpiry: null,
+                lastPosition: null,
+                lastMoveTime: Date.now(),
+            };
+            room.players.set(socketId, player);
+            room.hostSocketId = socketId;
+            console.log(`[HOST-REJOIN] Re-created host ${playerName} with socket ${socketId}`);
+            return { ok: true, room, player, restored: true };
         }
 
         // Player was fully removed — if lobby, let them rejoin fresh
