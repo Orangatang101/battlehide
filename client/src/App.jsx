@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useSocket } from './SocketContext'
 import { useGame } from './GameContext'
 import LandingPage from './pages/LandingPage'
@@ -9,14 +9,62 @@ import Lobby from './pages/Lobby'
 import GameScreen from './pages/GameScreen'
 import ResultsScreen from './pages/ResultsScreen'
 
+// --- Session helpers ---
+const SESSION_KEY = 'battlehide_session'
+const saveSession = (data) => {
+    try { localStorage.setItem(SESSION_KEY, JSON.stringify(data)) } catch { }
+}
+const loadSession = () => {
+    try { return JSON.parse(localStorage.getItem(SESSION_KEY)) } catch { return null }
+}
+const clearSession = () => {
+    try { localStorage.removeItem(SESSION_KEY) } catch { }
+}
+
 export default function App() {
     const { socket } = useSocket()
     const { state, dispatch } = useGame()
+    const rejoinAttempted = useRef(false)
 
     useEffect(() => {
         if (!socket) return
 
-        socket.on('connect', () => dispatch({ type: 'SET_MY_ID', payload: socket.id }))
+        socket.on('connect', () => {
+            dispatch({ type: 'SET_MY_ID', payload: socket.id })
+
+            // --- Auto-rejoin from saved session ---
+            if (rejoinAttempted.current) return
+            rejoinAttempted.current = true
+            const saved = loadSession()
+            if (saved?.roomCode && saved?.playerName) {
+                console.log('[BattleHide] Attempting auto-rejoin:', saved.roomCode, saved.playerName)
+                socket.emit('room:rejoin', { code: saved.roomCode, playerName: saved.playerName }, (res) => {
+                    if (res.error) {
+                        console.warn('[BattleHide] Rejoin failed:', res.error)
+                        clearSession()
+                        return
+                    }
+                    console.log('[BattleHide] Rejoin succeeded!')
+                    dispatch({ type: 'SET_ROOM', payload: { code: res.code, ...res.room } })
+                    dispatch({ type: 'SET_MY_ID', payload: socket.id })
+                    if (res.restored && res.role) {
+                        dispatch({
+                            type: 'ROLE_ASSIGNED', payload: {
+                                role: res.role,
+                                teamName: res.teamName,
+                                isVIP: res.isVIP,
+                                isAlphaSeeker: res.isAlphaSeeker,
+                                isHost: res.isHost,
+                                modeRules: res.room.rules,
+                            }
+                        })
+                    }
+                    if (res.gameState) {
+                        dispatch({ type: 'GAME_START', payload: { gameState: res.gameState } })
+                    }
+                })
+            }
+        })
 
         socket.on('room:state', data => dispatch({ type: 'ROOM_STATE', payload: data }))
         socket.on('role:assigned', data => dispatch({ type: 'ROLE_ASSIGNED', payload: data }))
@@ -47,8 +95,15 @@ export default function App() {
             setTimeout(() => dispatch({ type: 'JAMMER_CLEAR' }), data.durationSeconds * 1000)
         })
         socket.on('kicked', () => {
+            clearSession()
             dispatch({ type: 'RESET' })
             window.location.href = '/'
+        })
+
+        socket.on('game:ended', data => {
+            // Keep clearSession so they don't auto-rejoin a dead room
+            clearSession()
+            dispatch({ type: 'GAME_ENDED', payload: data })
         })
 
         return () => {

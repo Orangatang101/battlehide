@@ -96,6 +96,14 @@ function reducer(state, action) {
         case 'AUDIO_TRAP_CLEAR': return { ...state, audioTrapFired: false };
         case 'JAMMER_ACTIVATED': return { ...state, jammerActive: true };
         case 'JAMMER_CLEAR': return { ...state, jammerActive: false };
+        case 'SET_ROOM': return {
+            ...state,
+            roomCode: action.payload.code,
+            roomStatus: action.payload.status || 'lobby',
+            modeName: action.payload.modeName || action.payload.rules?.name,
+            hostName: action.payload.hostName,
+            rules: action.payload.rules,
+        };
         case 'RESET': return { ...init };
         default: return state;
     }

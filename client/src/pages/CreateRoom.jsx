@@ -33,6 +33,8 @@ export default function CreateRoom() {
             if (res?.error) return setError(res.error)
             dispatch({ type: 'ROOM_CREATED', payload: { ...res, playerName: hostName.trim() } })
             dispatch({ type: 'SET_MY_ID', payload: socket.id })
+            // Persist session for auto-rejoin
+            try { localStorage.setItem('battlehide_session', JSON.stringify({ roomCode: res.code, playerName: hostName.trim(), isHost: true })) } catch { }
             // Set the chosen mode
             socket.emit('room:setMode', { code: res.code, modeId: selectedMode })
             // Apply any custom rules

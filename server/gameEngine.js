@@ -5,6 +5,7 @@ class GameEngine {
     constructor(io) {
         this.io = io;
         this.rooms = new Map(); // roomCode => roomState
+        this.disconnectTimers = new Map(); // `${code}:${playerName}` => { timeout, playerData }
     }
 
     // ─── Room Management ────────────────────────────────────────────────────────
@@ -40,7 +41,29 @@ class GameEngine {
     joinRoom(code, socketId, playerName) {
         const room = this.rooms.get(code.toUpperCase());
         if (!room) return { error: 'Room not found. Check the code and try again.' };
-        if (room.status !== 'lobby') return { error: 'Game already in progress.' };
+
+        // Check if this is a reconnection (name matches a disconnected player)
+        const dcKey = `${code.toUpperCase()}:${playerName.toLowerCase()}`;
+        const pending = this.disconnectTimers.get(dcKey);
+        if (pending) {
+            // Cancel the disconnect timer and restore the player
+            clearTimeout(pending.timeout);
+            this.disconnectTimers.delete(dcKey);
+            return this._restorePlayer(room, socketId, pending.playerData);
+        }
+
+        // During active game, check if name matches an existing disconnected-but-still-in-map player
+        if (room.status !== 'lobby') {
+            const existing = [...room.players.entries()].find(
+                ([, p]) => p.name.toLowerCase() === playerName.toLowerCase()
+            );
+            if (existing) {
+                // Swap socket ID
+                return this._restorePlayer(room, socketId, existing[1], existing[0]);
+            }
+            return { error: 'Game already in progress.' };
+        }
+
         if (room.players.size >= 25) return { error: 'Room is full (max 25 players).' };
         if ([...room.players.values()].some(p => p.name.toLowerCase() === playerName.toLowerCase())) {
             return { error: 'Name already taken. Choose a different name.' };
@@ -68,26 +91,89 @@ class GameEngine {
         return { ok: true, room, player };
     }
 
+    // Restore a disconnected player with a new socket ID
+    _restorePlayer(room, newSocketId, playerData, oldSocketId) {
+        if (oldSocketId && room.players.has(oldSocketId)) {
+            room.players.delete(oldSocketId);
+        }
+        playerData.id = newSocketId;
+        room.players.set(newSocketId, playerData);
+
+        // If they were the host, update host socket
+        if (room.hostName === playerData.name) {
+            room.hostSocketId = newSocketId;
+        }
+
+        console.log(`[+] Restored player ${playerData.name} in room ${room.code} (new socket: ${newSocketId})`);
+        return { ok: true, room, player: playerData, restored: true };
+    }
+
+    // Rejoin by room code + name (called from the dedicated rejoin event)
+    rejoinRoom(code, socketId, playerName) {
+        const room = this.rooms.get(code?.toUpperCase());
+        if (!room) return { error: 'Room no longer exists.' };
+
+        // Check pending disconnect timers first
+        const dcKey = `${code.toUpperCase()}:${playerName.toLowerCase()}`;
+        const pending = this.disconnectTimers.get(dcKey);
+        if (pending) {
+            clearTimeout(pending.timeout);
+            this.disconnectTimers.delete(dcKey);
+            return this._restorePlayer(room, socketId, pending.playerData);
+        }
+
+        // Check if player is still in the room map (e.g. timer hasn't fired yet)
+        const existing = [...room.players.entries()].find(
+            ([, p]) => p.name.toLowerCase() === playerName.toLowerCase()
+        );
+        if (existing) {
+            return this._restorePlayer(room, socketId, existing[1], existing[0]);
+        }
+
+        // Player was fully removed — if lobby, let them rejoin fresh
+        if (room.status === 'lobby') {
+            return this.joinRoom(code, socketId, playerName);
+        }
+
+        return { error: 'Could not rejoin. You may have been removed from the game.' };
+    }
+
     removePlayer(socketId) {
         for (const [code, room] of this.rooms) {
             if (room.players.has(socketId)) {
+                const player = room.players.get(socketId);
                 const wasHost = room.hostSocketId === socketId;
+
+                // ── Grace period: keep player data for 30s so they can rejoin
+                const GRACE_MS = 30000;
+                const dcKey = `${code}:${player.name.toLowerCase()}`;
+
+                // Store the player data and start a removal timer
+                console.log(`[-] Player ${player.name} disconnected from ${code}. Grace period: ${GRACE_MS / 1000}s`);
                 room.players.delete(socketId);
 
-                if (wasHost && room.players.size > 0) {
-                    // Promote next player to host
-                    const newHostId = room.players.keys().next().value;
-                    room.hostSocketId = newHostId;
-                    room.players.get(newHostId).isHost = true;
-                    this.io.to(newHostId).emit('promoted:host', { message: 'You are now the host.' });
-                }
+                const timeout = setTimeout(() => {
+                    this.disconnectTimers.delete(dcKey);
+                    console.log(`[x] Grace period expired for ${player.name} in ${code}. Permanently removed.`);
 
-                if (room.players.size === 0) {
-                    this._clearTimers(room);
-                    this.rooms.delete(code);
-                } else {
-                    this._broadcastRoomState(code);
-                }
+                    // Only promote host / clean up room AFTER grace period
+                    if (wasHost && room.players.size > 0) {
+                        const newHostId = room.players.keys().next().value;
+                        room.hostSocketId = newHostId;
+                        const newHost = room.players.get(newHostId);
+                        if (newHost) newHost.isHost = true;
+                        this.io.to(newHostId).emit('promoted:host', { message: 'You are now the host.' });
+                    }
+                    if (room.players.size === 0 && this.disconnectTimers.size === 0) {
+                        this._clearTimers(room);
+                        this.rooms.delete(code);
+                    } else {
+                        this._broadcastRoomState(code);
+                    }
+                }, GRACE_MS);
+
+                this.disconnectTimers.set(dcKey, { timeout, playerData: player, wasHost });
+                this._broadcastRoomState(code);
                 return { code, wasHost };
             }
         }

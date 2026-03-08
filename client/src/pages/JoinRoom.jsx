@@ -21,8 +21,6 @@ export default function JoinRoom() {
         try {
             const res = await fetch(`/api/room/${code.toUpperCase()}`)
             if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Room not found.') }
-            const data = await res.json()
-            if (data.status !== 'lobby') throw new Error('Game already started. Wait for next round.')
             setStep(2)
         } catch (e) { setError(e.message) }
         finally { setLoading(false) }
@@ -38,6 +36,15 @@ export default function JoinRoom() {
             if (res.error) return setError(res.error)
             dispatch({ type: 'ROOM_JOINED', payload: { ...res, playerName: name.trim() } })
             dispatch({ type: 'SET_MY_ID', payload: socket.id })
+            // Persist session for auto-rejoin
+            try { localStorage.setItem('battlehide_session', JSON.stringify({ roomCode: res.code, playerName: name.trim(), isHost: false })) } catch { }
+            // If restored mid-game, set role + game state
+            if (res.restored && res.role) {
+                dispatch({ type: 'ROLE_ASSIGNED', payload: { role: res.role, teamName: res.teamName, isVIP: res.isVIP, isAlphaSeeker: res.isAlphaSeeker, isHost: res.isHost, modeRules: res.room.rules } })
+            }
+            if (res.gameState) {
+                dispatch({ type: 'GAME_START', payload: { gameState: res.gameState } })
+            }
         })
     }
 

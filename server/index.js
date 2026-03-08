@@ -73,10 +73,12 @@ io.on('connection', (socket) => {
         const result = engine.joinRoom(code, socket.id, playerName);
         if (result.error) return cb({ error: result.error });
         socket.join(result.room.code);
-        cb({
+
+        const response = {
             ok: true,
             code: result.room.code,
             player: result.player,
+            restored: result.restored || false,
             room: {
                 code: result.room.code,
                 status: result.room.status,
@@ -84,8 +86,56 @@ io.on('connection', (socket) => {
                 rules: result.room.rules,
                 hostName: result.room.hostName,
             },
-        });
+        };
+
+        // If the player was restored mid-game, send their role + game state
+        if (result.restored && result.room.status !== 'lobby') {
+            const p = result.player;
+            response.role = p.role;
+            response.teamName = p.teamName;
+            response.isVIP = p.isVIP;
+            response.isAlphaSeeker = p.isAlphaSeeker || false;
+            response.isHost = result.room.hostSocketId === socket.id;
+            response.gameState = result.room.gameState ? engine._serializeGameState(result.room) : null;
+        }
+
+        cb(response);
         engine._broadcastRoomState(result.room.code);
+    });
+
+    // ── Rejoin (auto-reconnect after reload / screen off)
+    socket.on('room:rejoin', ({ code, playerName }, cb) => {
+        const result = engine.rejoinRoom(code, socket.id, playerName);
+        if (result.error) return cb({ error: result.error });
+        socket.join(result.room.code);
+
+        const response = {
+            ok: true,
+            code: result.room.code,
+            player: result.player,
+            restored: result.restored || false,
+            room: {
+                code: result.room.code,
+                status: result.room.status,
+                mode: result.room.mode,
+                rules: result.room.rules,
+                hostName: result.room.hostName,
+            },
+        };
+
+        if (result.room.status !== 'lobby') {
+            const p = result.player;
+            response.role = p.role;
+            response.teamName = p.teamName;
+            response.isVIP = p.isVIP;
+            response.isAlphaSeeker = p.isAlphaSeeker || false;
+            response.isHost = result.room.hostSocketId === socket.id;
+            response.gameState = result.room.gameState ? engine._serializeGameState(result.room) : null;
+        }
+
+        cb(response);
+        engine._broadcastRoomState(result.room.code);
+        console.log(`[↺] ${playerName} rejoined room ${code}`);
     });
 
     // ── Set Game Mode
