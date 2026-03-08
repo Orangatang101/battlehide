@@ -6,7 +6,7 @@ const GAME_MODES = {
     icon: '👁️',
     description: 'Classic hide and seek. Seekers hunt hiders until all are caught.',
     teamNames: { seekers: 'Seekers', hiders: 'Hiders' },
-    defaultSeekerCount: 2,
+    defaultSeekerCount: 1,
     gameDuration: 15, // minutes
     countdownTime: 60, // seconds before seekers can move
     features: {
