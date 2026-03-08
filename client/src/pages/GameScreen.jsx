@@ -56,14 +56,19 @@ export default function GameScreen() {
 
     // GPS state
     const [myPos, setMyPos] = useState(null)
+    const myPosRef = useRef(null) // Always-current ref for use in intervals
     const [heading, setHeading] = useState(0)
 
     // Arrow state (cooldown-based)
-    const [arrowTarget, setArrowTarget] = useState(null) // locked target during active period
+    const [arrowTarget, setArrowTarget] = useState(null)
     const [arrowActive, setArrowActive] = useState(false)
-    const [arrowCooldown, setArrowCooldown] = useState(0) // seconds remaining
-    const [arrowTimeLeft, setArrowTimeLeft] = useState(0) // seconds of visibility remaining
+    const arrowActiveRef = useRef(false)
+    const [arrowCooldown, setArrowCooldown] = useState(0)
+    const [arrowTimeLeft, setArrowTimeLeft] = useState(0)
     const arrowPollRef = useRef(null)
+    const arrowTimerRef = useRef(null)
+    const cooldownTimerRef = useRef(null)
+    const lockedTargetIdRef = useRef(null)
 
     // Map flash state
     const [allPositions, setAllPositions] = useState([])
@@ -82,12 +87,13 @@ export default function GameScreen() {
     const rules = state.rules?.features || {}
 
     // ── Timing Config ─────────────────────────────────────────────────────────
-    // Seekers: 20s arrow, 60s cooldown | Hiders: 10s arrow, 60s cooldown
     const arrowDuration = isSeeker ? 20 : 10
     const arrowCooldownSec = 60
-    // Seekers: 15s map, 60s cooldown | Hiders: 5s map, 60s cooldown
     const flashDuration = isSeeker ? 15 : 5
     const flashCooldownSec = 60
+
+    // Keep myPosRef in sync
+    useEffect(() => { myPosRef.current = myPos }, [myPos])
 
     // ── GPS Tracking ──────────────────────────────────────────────────────────
     useEffect(() => {
@@ -95,10 +101,12 @@ export default function GameScreen() {
         const watchId = navigator.geolocation.watchPosition(
             (pos) => {
                 const { latitude, longitude, accuracy, altitude } = pos.coords
-                setMyPos({ lat: latitude, lng: longitude, accuracy, altitude })
+                const p = { lat: latitude, lng: longitude, accuracy, altitude }
+                setMyPos(p)
+                myPosRef.current = p
                 socket?.emit('player:position', {
                     code: state.roomCode,
-                    position: { lat: latitude, lng: longitude, accuracy, altitude },
+                    position: p,
                 })
             },
             (err) => console.warn('GPS error:', err.message),
@@ -122,72 +130,100 @@ export default function GameScreen() {
 
     // ── Arrow: Activate & Lock On ─────────────────────────────────────────────
     const activateArrow = useCallback(() => {
-        if (arrowCooldown > 0 || arrowActive || !myPos || !isActive) return
-        // Fetch positions and find nearest
-        socket?.emit('game:getPositions', { code: state.roomCode }, (positions) => {
-            if (!positions?.length || !myPos) return
-            const targets = positions.filter(p =>
-                isSeeker ? (p.role === 'hider' || p.role === 'assassin') : p.role === 'seeker'
-            )
-            if (targets.length === 0) return
+        const pos = myPosRef.current
+        if (arrowActiveRef.current || !pos || !isActive) return
+        // Check cooldown via functional check
+        setArrowCooldown(current => {
+            if (current > 0) return current // still cooling down, abort
+            // Cooldown is 0, proceed with activation
+            socket?.emit('game:getPositions', { code: state.roomCode }, (positions) => {
+                if (!positions?.length) return
+                const curPos = myPosRef.current
+                if (!curPos) return
+                const targets = positions.filter(p =>
+                    isSeeker ? (p.role === 'hider' || p.role === 'assassin') : p.role === 'seeker'
+                )
+                if (targets.length === 0) return
 
-            let closest = null, closestDist = Infinity
-            for (const t of targets) {
-                const d = calcDistance(myPos.lat, myPos.lng, t.lat, t.lng)
-                if (d < closestDist) { closestDist = d; closest = t }
-            }
-            if (!closest) return
-
-            // Lock onto this target
-            const bearing = calcBearing(myPos.lat, myPos.lng, closest.lat, closest.lng)
-            setArrowTarget({
-                id: closest.id, bearing, distance: Math.round(closestDist),
-                name: closest.name, avatar: closest.avatar, role: closest.role,
-                lat: closest.lat, lng: closest.lng,
-            })
-            setArrowActive(true)
-            setArrowTimeLeft(arrowDuration)
-
-            // Keep updating bearing & distance during active period
-            arrowPollRef.current = setInterval(() => {
-                socket?.emit('game:getPositions', { code: state.roomCode }, (pos) => {
-                    if (!pos?.length) return
-                    const updated = pos.find(p => p.id === closest.id)
-                    if (updated && myPos) {
-                        const b = calcBearing(myPos.lat, myPos.lng, updated.lat, updated.lng)
-                        const d = calcDistance(myPos.lat, myPos.lng, updated.lat, updated.lng)
-                        setArrowTarget(prev => prev ? { ...prev, bearing: b, distance: Math.round(d), lat: updated.lat, lng: updated.lng } : prev)
-                    }
-                })
-            }, 1500)
-        })
-    }, [arrowCooldown, arrowActive, myPos, isActive, socket, state.roomCode, isSeeker, arrowDuration])
-
-    // Arrow active countdown
-    useEffect(() => {
-        if (!arrowActive) return
-        const i = setInterval(() => {
-            setArrowTimeLeft(t => {
-                if (t <= 1) {
-                    clearInterval(i)
-                    clearInterval(arrowPollRef.current)
-                    setArrowActive(false)
-                    setArrowTarget(null)
-                    setArrowCooldown(arrowCooldownSec)
-                    return 0
+                let closest = null, closestDist = Infinity
+                for (const t of targets) {
+                    const d = calcDistance(curPos.lat, curPos.lng, t.lat, t.lng)
+                    if (d < closestDist) { closestDist = d; closest = t }
                 }
-                return t - 1
-            })
-        }, 1000)
-        return () => clearInterval(i)
-    }, [arrowActive, arrowCooldownSec])
+                if (!closest) return
 
-    // Arrow cooldown timer
+                // Lock onto this target
+                lockedTargetIdRef.current = closest.id
+                const bearing = calcBearing(curPos.lat, curPos.lng, closest.lat, closest.lng)
+                setArrowTarget({
+                    id: closest.id, bearing, distance: Math.round(closestDist),
+                    name: closest.name, avatar: closest.avatar, role: closest.role,
+                    lat: closest.lat, lng: closest.lng,
+                })
+                setArrowActive(true)
+                arrowActiveRef.current = true
+                setArrowTimeLeft(arrowDuration)
+
+                // Live tracking: poll every 1s using refs for fresh data
+                arrowPollRef.current = setInterval(() => {
+                    const freshPos = myPosRef.current
+                    if (!freshPos) return
+                    socket?.emit('game:getPositions', { code: state.roomCode }, (allPos) => {
+                        if (!allPos?.length) return
+                        const updated = allPos.find(p => p.id === lockedTargetIdRef.current)
+                        const nowPos = myPosRef.current
+                        if (updated && nowPos) {
+                            const b = calcBearing(nowPos.lat, nowPos.lng, updated.lat, updated.lng)
+                            const d = calcDistance(nowPos.lat, nowPos.lng, updated.lat, updated.lng)
+                            setArrowTarget(prev => prev ? {
+                                ...prev, bearing: b, distance: Math.round(d),
+                                lat: updated.lat, lng: updated.lng
+                            } : prev)
+                        }
+                    })
+                }, 1000)
+
+                // Auto-expire after duration
+                let remaining = arrowDuration
+                arrowTimerRef.current = setInterval(() => {
+                    remaining--
+                    setArrowTimeLeft(remaining)
+                    if (remaining <= 0) {
+                        // Deactivate
+                        clearInterval(arrowTimerRef.current)
+                        clearInterval(arrowPollRef.current)
+                        arrowTimerRef.current = null
+                        arrowPollRef.current = null
+                        setArrowActive(false)
+                        arrowActiveRef.current = false
+                        setArrowTarget(null)
+                        lockedTargetIdRef.current = null
+                        // Start cooldown
+                        setArrowCooldown(arrowCooldownSec)
+                        let cd = arrowCooldownSec
+                        cooldownTimerRef.current = setInterval(() => {
+                            cd--
+                            setArrowCooldown(cd)
+                            if (cd <= 0) {
+                                clearInterval(cooldownTimerRef.current)
+                                cooldownTimerRef.current = null
+                            }
+                        }, 1000)
+                    }
+                }, 1000)
+            })
+            return 0 // keep cooldown at 0 (activation is async)
+        })
+    }, [isActive, socket, state.roomCode, isSeeker, arrowDuration, arrowCooldownSec])
+
+    // Cleanup on unmount
     useEffect(() => {
-        if (arrowCooldown <= 0) return
-        const i = setInterval(() => setArrowCooldown(c => Math.max(0, c - 1)), 1000)
-        return () => clearInterval(i)
-    }, [arrowCooldown])
+        return () => {
+            clearInterval(arrowPollRef.current)
+            clearInterval(arrowTimerRef.current)
+            clearInterval(cooldownTimerRef.current)
+        }
+    }, [])
 
     // ── Map Flash Logic ───────────────────────────────────────────────────────
     const triggerMapFlash = useCallback(() => {
