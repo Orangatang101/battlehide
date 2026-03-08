@@ -333,6 +333,15 @@ class GameEngine {
                 events: [],
             };
 
+            // Initialize tracking fields on every player
+            for (const [sid, p] of room.players) {
+                p.survivalStart = Date.now();
+                p.caughtAt = null;
+                p.catchCount = 0;
+                p.survivalTime = 0;
+                room.players.set(sid, p);
+            }
+
             this.io.to(room.code).emit('game:start', {
                 gameState: this._serializeGameState(room),
             });
@@ -768,12 +777,58 @@ class GameEngine {
 
     updatePosition(code, playerId, positionData) {
         const room = this.rooms.get(code);
-        if (!room || room.status !== 'active') return;
+        if (!room) return;
         const player = room.players.get(playerId);
         if (!player) return;
-        player.lastPosition = positionData;
+        player.lastPosition = positionData; // { lat, lng, accuracy, altitude }
         player.lastMoveTime = Date.now();
         room.players.set(playerId, player);
+    }
+
+    // Mark a hider as found (seeker-initiated)
+    markFound(code, seekerId, targetId) {
+        const room = this.rooms.get(code);
+        if (!room || room.status !== 'active') return { error: 'No active game.' };
+        const seeker = room.players.get(seekerId);
+        if (!seeker || seeker.role !== 'seeker') return { error: 'Only seekers can tag.' };
+        const target = room.players.get(targetId);
+        if (!target) return { error: 'Player not found.' };
+        if (target.role === 'seeker') return { error: 'Cannot tag another seeker.' };
+        if (target.status !== 'alive') return { error: `${target.name} is already caught.` };
+
+        target.status = 'caught';
+        target.caughtAt = Date.now();
+        target.survivalTime = Math.floor((Date.now() - (target.survivalStart || room.gameState.startTime)) / 1000);
+        seeker.catchCount = (seeker.catchCount || 0) + 1;
+        seeker.score += room.rules.scoring?.catchPoints || 100;
+        target.score += room.rules.scoring?.hiderSurvivalBonus ? Math.floor((target.survivalTime / 60) * room.rules.scoring.hiderSurvivalBonus) : 0;
+
+        room.players.set(targetId, target);
+        room.players.set(seekerId, seeker);
+
+        this.io.to(targetId).emit('player:caught', { message: `You were found by ${seeker.name}!` });
+        this._broadcastEvent(room, `💥 ${seeker.name} found ${target.name}!`, 'danger');
+        this._broadcastRoomState(code);
+        this._checkWinCondition(room);
+        return { ok: true, targetName: target.name };
+    }
+
+    // Get positions for map flash (role-filtered)
+    getPositions(code, requesterId) {
+        const room = this.rooms.get(code);
+        if (!room || room.status !== 'active') return [];
+        const requester = room.players.get(requesterId);
+        if (!requester) return [];
+        return [...room.players.values()]
+            .filter(p => p.status === 'alive' && p.id !== requesterId && p.lastPosition?.lat)
+            .map(p => ({
+                id: p.id,
+                name: p.name,
+                role: p.role,
+                lat: p.lastPosition.lat,
+                lng: p.lastPosition.lng,
+                avatar: p.avatar,
+            }));
     }
 
     // ─── Assassin Kill ────────────────────────────────────────────────────────
@@ -819,28 +874,46 @@ class GameEngine {
         this._clearTimers(room);
 
         const players = [...room.players.values()];
-        // Final survival bonus
-        if (room.gameState) {
-            const elapsed = (Date.now() - room.gameState.startTime) / 1000 / 60;
-            players.forEach(p => {
-                if ((p.role === 'hider' || p.role === 'assassin') && p.status === 'alive') {
-                    p.score += Math.floor(elapsed * (room.rules.scoring?.hiderSurvivalBonus || 10));
-                }
-            });
-        }
+        const now = Date.now();
+        const gameDuration = room.gameState ? Math.floor((now - room.gameState.startTime) / 1000) : 0;
 
+        // Finalize survival times for alive hiders
+        players.forEach(p => {
+            if ((p.role === 'hider' || p.role === 'assassin') && p.status === 'alive') {
+                p.survivalTime = gameDuration;
+                p.score += Math.floor((gameDuration / 60) * (room.rules.scoring?.hiderSurvivalBonus || 10));
+            }
+        });
+
+        // Build leaderboard
+        const hiders = players.filter(p => p.role === 'hider' || p.role === 'assassin');
+        const seekers = players.filter(p => p.role === 'seeker');
+        const longestSurvivor = hiders.sort((a, b) => (b.survivalTime || 0) - (a.survivalTime || 0))[0];
+        const topSeeker = seekers.sort((a, b) => (b.catchCount || 0) - (a.catchCount || 0))[0];
         const sorted = players.sort((a, b) => b.score - a.score);
+
         const winnerTeam = reason === 'seekers_win'
             ? (room.rules.teamNames?.seekers || 'Seekers')
             : reason === 'hiders_win'
                 ? (room.rules.teamNames?.hiders || 'Hiders')
-                : 'Draw';
+                : reason === 'timeout'
+                    ? (room.rules.teamNames?.hiders || 'Hiders') // Timeout = hiders win (survived)
+                    : 'Draw';
 
         this.io.to(code).emit('game:ended', {
             reason,
             winnerTeam,
-            scoreboard: sorted.map(p => this._sanitizePlayer(p, true)),
-            duration: room.gameState ? Math.floor((Date.now() - room.gameState.startTime) / 1000) : 0,
+            scoreboard: sorted.map(p => ({
+                ...this._sanitizePlayer(p, true),
+                catchCount: p.catchCount || 0,
+                survivalTime: p.survivalTime || 0,
+            })),
+            duration: gameDuration,
+            awards: {
+                longestSurvivor: longestSurvivor ? { name: longestSurvivor.name, avatar: longestSurvivor.avatar, time: longestSurvivor.survivalTime || 0 } : null,
+                topSeeker: topSeeker ? { name: topSeeker.name, avatar: topSeeker.avatar, catches: topSeeker.catchCount || 0 } : null,
+                mvp: sorted[0] ? { name: sorted[0].name, avatar: sorted[0].avatar, score: sorted[0].score } : null,
+            },
         });
         this._broadcastRoomState(code);
     }
@@ -850,19 +923,23 @@ class GameEngine {
     _buildZones(room) {
         if (!room.rules.features?.shrinkingZone?.enabled) return [];
 
-        // Use campus building map if selected
         const mapId = room.mapId;
         const building = mapId ? CAMPUS_MAPS[mapId] : null;
+        const gameDurationMin = room.rules.gameDuration || 15;
 
         if (building) {
-            // Use real building floors as zones
-            // Override the zone interval based on building size
-            room.rules.features.shrinkingZone.intervalMinutes = building.zoneIntervalMinutes;
+            // Dynamic zone timing: spread zones evenly across game duration
+            // Formula: gameDuration / (numZones + 1) to ensure last zone closes before game ends
+            const numZones = building.zones.length;
+            const dynamicInterval = Math.max(1, gameDurationMin / (numZones + 1));
+            room.rules.features.shrinkingZone.intervalMinutes = dynamicInterval;
             return building.zones.map(z => ({ ...z, active: true }));
         }
 
         // Fallback: generic zones
         const count = 6;
+        const dynamicInterval = Math.max(1, gameDurationMin / (count + 1));
+        room.rules.features.shrinkingZone.intervalMinutes = dynamicInterval;
         const names = ['North Wing', 'South Wing', 'East Wing', 'West Wing', 'Upper Floor', 'Central Hub'];
         return Array.from({ length: count }, (_, i) => ({
             id: `zone_${i}`,

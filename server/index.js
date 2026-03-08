@@ -214,20 +214,21 @@ io.on('connection', (socket) => {
         engine.useBlackout(code, socket.id);
     });
 
-    // ── Position Update
+    // ── GPS Position Update
     socket.on('player:position', ({ code, position }) => {
         engine.updatePosition(code, socket.id, position);
     });
 
-    // ── Floor Update (player reports which floor they're on)
-    socket.on('player:setFloor', ({ code, floor }) => {
-        const room = engine.getRoom(code);
-        if (!room) return;
-        const player = room.players.get(socket.id);
-        if (player) {
-            player.currentFloor = floor;
-            room.players.set(socket.id, player);
-        }
+    // ── Mark a hider as found (seeker-initiated)
+    socket.on('player:markFound', ({ code, targetId }, cb) => {
+        const result = engine.markFound(code, socket.id, targetId);
+        cb?.(result);
+    });
+
+    // ── Get all player positions for map flash
+    socket.on('game:getPositions', ({ code }, cb) => {
+        const positions = engine.getPositions(code, socket.id);
+        cb?.(positions);
     });
 
     // ── Paranoia cleared (player moved)

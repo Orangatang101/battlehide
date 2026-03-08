@@ -83,6 +83,13 @@ function reducer(state, action) {
             ...state,
             roomStatus: 'ended',
             players: action.payload.scoreboard || state.players,
+            awards: action.payload.awards || {},
+            gameState: {
+                ...state.gameState,
+                duration: action.payload.duration || 0,
+                reason: action.payload.reason,
+                awards: action.payload.awards,
+            },
         };
         case 'ZONE_CLOSED': return { ...state, closedZones: [...state.closedZones, action.payload.zoneId] };
         case 'EVENT': return { ...state, events: [action.payload, ...state.events].slice(0, 50) };

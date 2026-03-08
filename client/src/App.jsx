@@ -88,6 +88,9 @@ export default function App() {
             clearSession()
             dispatch({ type: 'GAME_ENDED', payload: data })
         })
+        socket.on('players:full', data => {
+            dispatch({ type: 'ROOM_STATE', payload: { players: data.players } })
+        })
 
         socket.on('game:event', evt => dispatch({ type: 'EVENT', payload: evt }))
         socket.on('zone:closed', data => dispatch({ type: 'ZONE_CLOSED', payload: data }))
@@ -167,16 +170,27 @@ export default function App() {
 
 function playBeep() {
     try {
+        // Force max volume — create loud siren that's impossible to miss
         const ctx = new (window.AudioContext || window.webkitAudioContext)()
-        const osc = ctx.createOscillator()
         const gain = ctx.createGain()
-        osc.connect(gain)
         gain.connect(ctx.destination)
-        osc.frequency.setValueAtTime(880, ctx.currentTime)
-        osc.frequency.setValueAtTime(660, ctx.currentTime + 0.1)
-        gain.gain.setValueAtTime(0.8, ctx.currentTime)
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6)
-        osc.start(ctx.currentTime)
-        osc.stop(ctx.currentTime + 0.6)
+        gain.gain.setValueAtTime(1.0, ctx.currentTime) // MAX volume
+
+        // Create a loud alternating siren (3 seconds)
+        for (let i = 0; i < 6; i++) {
+            const osc = ctx.createOscillator()
+            osc.connect(gain)
+            const t = ctx.currentTime + i * 0.5
+            osc.frequency.setValueAtTime(i % 2 === 0 ? 1200 : 800, t)
+            osc.start(t)
+            osc.stop(t + 0.45)
+        }
+
+        // Also try to play via an Audio element at max volume for devices that support it
+        try {
+            const audio = new Audio('data:audio/wav;base64,UklGRl9vT19telefonGFtYQAAAAABAAEARKwAAIhYAQACABAAZGF0YQ==')
+            audio.volume = 1.0
+            audio.play().catch(() => { })
+        } catch (e2) { }
     } catch (e) { /* Audio not available */ }
 }
