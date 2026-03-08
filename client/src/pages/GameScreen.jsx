@@ -21,10 +21,9 @@ function calcBearing(lat1, lng1, lat2, lng2) {
     return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360
 }
 function formatDist(feet) {
-    if (feet < 50) return { text: 'NEARBY', sub: '< 50ft — GPS margin', nearby: true }
-    if (feet < 100) return { text: `~${Math.round(feet / 10) * 10}`, sub: 'ft (approx)', nearby: false }
-    if (feet < 1000) return { text: `${Math.round(feet / 10) * 10}`, sub: 'ft', nearby: false }
-    return { text: `${(feet / 5280).toFixed(1)}`, sub: 'mi', nearby: false }
+    if (feet < 30) return { text: 'NEARBY', sub: '< 30ft', nearby: true }
+    if (feet < 60) return { text: `~${Math.round(feet)}`, sub: 'ft', nearby: false }
+    return { text: `${Math.round(feet)}`, sub: 'ft', nearby: false }
 }
 
 // ── Circular Progress Ring ───────────────────────────────────────────────
@@ -406,9 +405,9 @@ export default function GameScreen() {
                             {myPos && allPositions.map(p => {
                                 const dx = (p.lng - myPos.lng) * 364000
                                 const dy = (p.lat - myPos.lat) * 364000
-                                const maxR = 500
-                                const px = 150 + (dx / maxR) * 130
-                                const py = 150 - (dy / maxR) * 130
+                                const maxR = 400
+                                const px = 150 + (dx / maxR) * 140
+                                const py = 150 - (dy / maxR) * 140
                                 const cx = Math.max(16, Math.min(284, px)), cy = Math.max(16, Math.min(284, py))
                                 const isTgt = isSeeker ? (p.role !== 'seeker') : (p.role === 'seeker')
                                 const dist = calcDistance(myPos.lat, myPos.lng, p.lat, p.lng)
@@ -418,7 +417,7 @@ export default function GameScreen() {
                                         <motion.div animate={{ scale: [1, 1.15, 1] }} transition={{ duration: 1.5, repeat: Infinity, delay: Math.random() }}
                                             style={{ fontSize: '1.3rem', filter: `drop-shadow(0 0 6px ${isTgt ? accentColor : 'rgba(59,130,246,0.5)'})` }}>{p.avatar}</motion.div>
                                         <div style={{ fontSize: '0.55rem', color: isTgt ? accentColor : '#60a5fa', fontWeight: 700, whiteSpace: 'nowrap', textShadow: '0 1px 4px rgba(0,0,0,0.8)' }}>
-                                            {p.name} · {dist < 50 ? 'nearby' : `${Math.round(dist / 10) * 10}ft`}
+                                            {p.name} · {dist < 30 ? 'nearby' : `${Math.round(dist)}ft`}
                                         </div>
                                     </motion.div>
                                 )
